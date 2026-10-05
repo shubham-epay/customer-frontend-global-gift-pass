@@ -54,7 +54,8 @@ export default function DirectCardPanel({ orderNumber, token, amountLabel, defau
 
   /** One place that turns an API result into what the shopper sees. */
   const handle = useCallback((r) => {
-    if (r.status === 'PAID') { onPaid(r.order); return; }
+    // AUTHORIZED: the amount is held on the card and captured when the order is confirmed.
+    if (r.status === 'PAID' || r.status === 'AUTHORIZED') { onPaid(r.order); return; }
     if (r.status === 'REQUIRES_ACTION' && r.action?.html) {
       setChallenge(r.action.html);
       setPhase('challenge');

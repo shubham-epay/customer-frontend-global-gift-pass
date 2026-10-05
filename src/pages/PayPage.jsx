@@ -14,6 +14,8 @@ import '../styles/checkout.css';
 
 const amount = (v, currency) => `${currency} ${Number(v || 0).toLocaleString('en-AE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// The shopper has nothing left to do: paid, or the card was authorized and is waiting for us to capture it.
+const done = (order) => order?.paymentStatus === 'PAID' || order?.paymentStatus === 'AUTHORIZED';
 
 /**
  * Pay for a placed order: the Hosted Session card form or a payment link, with a switch to
@@ -45,7 +47,8 @@ export default function PayPage() {
   const goConfirmed = useCallback((o) => {
     if (confirmed.current) return;
     confirmed.current = true;
-    const full = { ...(snapshot || { orderNumber }), ...o, paymentStatus: 'PAID' };
+    // AUTHORIZED (Direct API, manual capture): the card went through and the amount is held until we capture it.
+    const full = { ...(snapshot || { orderNumber }), ...o, paymentStatus: o.paymentStatus === 'AUTHORIZED' ? 'AUTHORIZED' : 'PAID' };
     try { sessionStorage.setItem('ggp-last-order', JSON.stringify(full)); } catch { /* storage unavailable */ }
     payStore.clear(orderNumber);
     navigate('/order-confirmed', { replace: true, state: { order: full } });
@@ -55,7 +58,7 @@ export default function PayPage() {
   const refresh = useCallback(async () => {
     const { data } = await payments.status(orderNumber, token);
     setOrder(data.order);
-    if (data.order.paymentStatus === 'PAID') { goConfirmed(data.order); return data; }
+    if (done(data.order)) { goConfirmed(data.order); return data; }
     // Keep a hosted session that's mounted (its client token isn't returned by the status call).
     setPayment((p) => (p?.session?.clientToken && p._id === data.payment?._id ? { ...p, status: data.payment.status } : data.payment));
     return data;
@@ -70,7 +73,7 @@ export default function PayPage() {
       for (let i = 0; i < tries && live; i += 1) {
         try {
           const d = await refresh();
-          if (d?.order.paymentStatus === 'PAID') return;
+          if (done(d?.order)) return;
         } catch (err) {
           if (live) setError(err.response?.status === 404 ? 'not-found' : errorMessage(err));
           break;
@@ -93,14 +96,14 @@ export default function PayPage() {
     setChecking(true);
     try {
       const d = await refresh();
-      if (d.order.paymentStatus !== 'PAID') setError('We haven’t received the payment yet. If you just paid, give it a few seconds.');
+      if (!done(d.order)) setError('We haven’t received the payment yet. If you just paid, give it a few seconds.');
     } catch (err) { setError(errorMessage(err)); } finally { setChecking(false); }
   };
 
   /** Hosted Session reported success: wait for our webhook / Get Status to confirm. */
   const onCardCompleted = useCallback(async () => {
     for (let i = 0; i < 8; i += 1) {
-      try { const d = await refresh(); if (d.order.paymentStatus === 'PAID') return; } catch { /* keep trying */ }
+      try { const d = await refresh(); if (done(d.order)) return; } catch { /* keep trying */ }
       await sleep(2000);
     }
     setError('Your payment is being confirmed. You’ll get an email as soon as it’s done.');

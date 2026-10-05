@@ -248,6 +248,14 @@
 .pay-ok { margin: 0; color: #1E7B3A; font-size: 14px; }
 .pay-secure { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 0; color: var(--co-muted); font-size: 12.5px; }
 .hs-fields:empty, .hs-fields.is-loading { min-height: 140px; }
+/* SynraPay Hosted Session fields: the SDK's documented styling variables, matched to the checkout. */
+.hs-fields {
+  --synra-accent: var(--co-accent); --synra-accent-soft: rgba(20, 34, 74, .12); --synra-border: var(--co-line);
+  --synra-radius: 7px; --synra-field-bg: var(--white); --synra-error: var(--co-red);
+}
+/* Sandbox draws its test-card form as plain inputs in our page, so the site-wide input style would
+   stretch the MM / YY boxes; keep the SDK's own sizing for them. Live fields are the bank's iframes. */
+.hs-fields input.synra-hs-part { width: 3.2em; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 .hs-fields.is-loading { border-radius: 7px; background: linear-gradient(90deg, var(--co-panel) 0 40%, #ECECEC 50%, var(--co-panel) 60% 100%); background-size: 200% 100%; animation: pm-shimmer 1.2s linear infinite; }
 .pay-linkbox { display: flex; gap: 8px; }
 .pay-linkbox input { flex: 1; min-width: 0; height: 46px; padding: 0 12px; border: 1px solid var(--co-line); border-radius: 7px; font-size: 14px; background: var(--white); color: var(--co-ink); }

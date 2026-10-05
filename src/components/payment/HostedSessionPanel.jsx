@@ -32,28 +32,36 @@ const RESTART = ['SESSION_EXPIRED', 'INVALID_SESSION', 'INVALID_CLIENT_TOKEN', '
 export default function HostedSessionPanel({ session, amountLabel, onCompleted, onRestart }) {
   const container = useRef(null);
   const handle = useRef(null);
+  const done = useRef(false); // the SDK reported a successful payment
   const [phase, setPhase] = useState('loading'); // loading | ready | paying | error
   const [card, setCard] = useState(null);
   const [error, setError] = useState(null);
   const [attempt, setAttempt] = useState(0); // bump to reload the SDK
+  // Latest callback without making it a reason to re-mount: the SDK is mounted once per client token.
+  const completed = useRef(onCompleted);
+  useEffect(() => { completed.current = onCompleted; }, [onCompleted]);
 
   useEffect(() => {
     let live = true;
+    const box = container.current;
+    done.current = false;
     setPhase('loading');
     setError(null);
     loadSdk(session.sdkUrl)
       .then(() => {
         if (!live) return;
         if (!window.SynraHostedSession) throw new Error('The secure card form failed to start.');
-        container.current.innerHTML = '';
+        box.innerHTML = '';
         handle.current = window.SynraHostedSession.mount({
-          clientToken: session.clientToken,
-          container: container.current,
+          clientToken: session.clientToken, // from Create Session, passed unchanged
+          container: '#synra-card',
           onReady: () => live && setPhase('ready'),
           onCard: (c) => live && setCard(c),
           onCompleted: (r) => {
             if (!live) return;
-            if (r.ok) { setPhase('paying'); onCompleted(r); } else {
+            // ok: paid. pending: the bank hasn't answered yet. Either way our API (webhook / Get Status)
+            // has the real answer, so keep "Processing" and let the page wait for it.
+            if (r.ok || r.status === 'pending') { done.current = true; setPhase('paying'); completed.current(r); } else {
               setPhase('ready');
               setError({ code: 'DECLINED', message: r.message || 'The payment was not completed. Check your card details or try another card.' });
             }
@@ -62,6 +70,8 @@ export default function HostedSessionPanel({ session, amountLabel, onCompleted, 
             if (!live) return;
             setError({ code: e.code, message: e.displayed ? null : e.message }); // displayed: the SDK already shows it
             const fatal = FALLBACK.includes(e.code) || RESTART.includes(e.code);
+            // An error before the fields are ready (e.g. SynraPay could not be reached from this page)
+            // means there is no form to pay with: 'error' shows the notice instead of a dead Pay button.
             setPhase((p) => (fatal || p === 'loading' ? 'error' : 'ready'));
           },
         });
@@ -76,21 +86,27 @@ export default function HostedSessionPanel({ session, amountLabel, onCompleted, 
 
     return () => {
       live = false;
+      // destroy() closes the SDK's 3-D Secure window but leaves its fields behind: remove them too.
       try { handle.current?.destroy?.(); } catch { /* already gone */ }
       handle.current = null;
+      if (box) box.innerHTML = '';
     };
-  }, [session, onCompleted, attempt]);
+  }, [session.sdkUrl, session.clientToken, attempt]);
 
-  const pay = () => {
+  const pay = async () => {
     if (!handle.current) return;
     setError(null);
     setPhase('paying');
-    try { handle.current.pay(); } catch (e) { setPhase('ready'); setError({ code: 'PAY_FAILED', message: e.message }); }
+    try { await handle.current.pay(); } catch (e) { setError({ code: 'PAY_FAILED', message: e.message }); }
+    // pay() also settles with no callback: the bank's 3-D Secure screen opened, or the SDK showed an
+    // error inside the form. Only a successful payment keeps the button on "Processing".
+    setPhase((p) => (p === 'paying' && !done.current ? 'ready' : p));
   };
 
-  const unavailable = FALLBACK.includes(error?.code); // the embedded form can't be used for this order
-  const fallback = unavailable && session.fallbackCheckoutUrl;
   const restart = RESTART.includes(error?.code);
+  // The embedded form can't be used for this order: the provider said so, or it never finished loading.
+  const unavailable = FALLBACK.includes(error?.code) || (phase === 'error' && !restart);
+  const fallback = unavailable && session.fallbackCheckoutUrl;
 
   return (
     <section className="pay-card">
@@ -98,8 +114,7 @@ export default function HostedSessionPanel({ session, amountLabel, onCompleted, 
         <h2>Card details</h2>
         {session.environment === 'sandbox' && <span className="pay-tag">Test mode</span>}
       </div>
-
-      {unavailable ? (
+      {unavailable && (
         <div className="pay-notice" role="alert">
           <b>The on-page card form isn’t available right now.</b>
           <span>
@@ -108,9 +123,9 @@ export default function HostedSessionPanel({ session, amountLabel, onCompleted, 
               : 'Please try again in a moment, or choose another way to pay below. You haven’t been charged.'}
           </span>
         </div>
-      ) : (
-        <div ref={container} className={`hs-fields${phase === 'loading' ? ' is-loading' : ''}`} aria-busy={phase === 'loading'} />
       )}
+      {/* Always in the page (hidden behind the notice) so "Try the card form again" has somewhere to mount. */}
+      <div id="synra-card" ref={container} hidden={unavailable} className={`hs-fields${phase === 'loading' ? ' is-loading' : ''}`} aria-busy={phase === 'loading'} />
       {!unavailable && card?.last4 && <p className="pay-muted">Paying with {card.brand} •••• {card.last4}</p>}
       {error?.message && <p className="pay-error" role="alert">{error.message}</p>}
 
@@ -122,7 +137,7 @@ export default function HostedSessionPanel({ session, amountLabel, onCompleted, 
       ) : restart ? (
         <button type="button" className="co-pay" onClick={onRestart}>Start a new payment</button>
       ) : (
-        <button type="button" className="co-pay" onClick={pay} disabled={phase !== 'ready'}>
+        <button type="button" id="pay-button" className="co-pay" onClick={pay} disabled={phase !== 'ready'}>
           {phase === 'paying' ? 'Processing…' : phase === 'loading' ? 'Loading secure form…' : `Pay ${amountLabel}`}
         </button>
       )}
