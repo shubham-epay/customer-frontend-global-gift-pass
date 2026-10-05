@@ -7,7 +7,9 @@ import ListingPage from './pages/ListingPage';
 import ProductPage from './pages/ProductPage';
 import CartPage from './pages/CartPage';
 import CheckoutPage from './pages/CheckoutPage';
+import PayPage from './pages/PayPage';
 import AuthPage from './pages/AuthPage';
+import OrderConfirmedPage from './pages/OrderConfirmedPage';
 import CollectionPage from './pages/CollectionPage';
 import CategoriesPage from './pages/CategoriesPage';
 import InfoPage from './pages/InfoPage';
@@ -22,6 +24,9 @@ import AddressesPage from './pages/account/AddressesPage';
 export default function App() {
   return (
     <Routes>
+      {/* Checkout has its own minimal header (logo + bag), like a hosted checkout. No sign-in required. */}
+      <Route path="checkout" element={<CheckoutPage />} />
+      <Route path="pay/:orderNumber" element={<PayPage />} />
       <Route element={<Layout />}>
         <Route index element={<HomePage />} />
         <Route path="c/:slug" element={<ListingPage mode="category" />} />
@@ -33,8 +38,8 @@ export default function App() {
         <Route path="p/:slug" element={<ProductPage />} />
         <Route path="login" element={<AuthPage mode="login" />} />
         <Route path="register" element={<AuthPage mode="register" />} />
-        <Route path="cart" element={<RequireAuth><CartPage /></RequireAuth>} />
-        <Route path="checkout" element={<RequireAuth><CheckoutPage /></RequireAuth>} />
+        <Route path="cart" element={<CartPage />} />
+        <Route path="order-confirmed" element={<OrderConfirmedPage />} />
         <Route path="account" element={<RequireAuth><AccountLayout /></RequireAuth>}>
           <Route index element={<ProfilePage />} />
           <Route path="orders" element={<OrdersPage />} />

@@ -18,6 +18,8 @@ export const GiftIcon = (p) => <svg {...base} {...p}><rect x="3" y="8" width="18
 export const ChevronLeft = (p) => <svg {...base} {...p}><path d="m15 18-6-6 6-6" /></svg>;
 export const ChevronRight = (p) => <svg {...base} {...p}><path d="m9 18 6-6-6-6" /></svg>;
 export const ChevronDown = (p) => <svg {...base} {...p}><path d="m6 9 6 6 6-6" /></svg>;
+export const GlobeIcon = (p) => <svg {...base} {...p}><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" /></svg>;
+export const CheckIcon = (p) => <svg {...base} {...p}><path d="m5 12 5 5 9-10" /></svg>;
 export const ArrowRight = (p) => <svg {...base} {...p}><path d="M5 12h14M13 6l6 6-6 6" /></svg>;
 export const TrashIcon = (p) => <svg {...base} {...p}><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" /></svg>;
 export const BriefcaseIcon = (p) => <svg {...base} {...p}><rect x="3" y="7" width="18" height="13" rx="2" /><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M3 12h18" /></svg>;

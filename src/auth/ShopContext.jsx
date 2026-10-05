@@ -1,28 +1,36 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { cart as cartApi, wishlist as wishlistApi } from '../api/store';
-import { errorMessage } from '../api/client';
+import { cartTokenStore, errorMessage } from '../api/client';
 import { useAuth } from './AuthContext';
 import { useToast } from '../components/Toast';
 
-/** Cart + wishlist state for the signed-in customer. Guests are sent to sign in when they try to use either. */
+/**
+ * Cart (guests and customers alike) + wishlist (signed-in only). Guests keep a cart via a token the API
+ * issues; signing in merges it into the account cart.
+ */
 const ShopContext = createContext(null);
 
 export function ShopProvider({ children }) {
-  const { isAuthed } = useAuth();
+  const { isAuthed, status } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
   const location = useLocation();
   const [cart, setCart] = useState(null);
   const [wishIds, setWishIds] = useState(new Set());
 
-  const reloadCart = useCallback(() => cartApi.get().then((r) => setCart(r.data)).catch(() => {}), []);
+  const reloadCart = useCallback(() => cartApi.get().then((r) => { setCart(r.data); return r.data; }).catch(() => {}), []);
 
+  // Load the cart once the session is known (so a signed-in load merges any guest cart), and again on sign-in/out.
   useEffect(() => {
-    if (!isAuthed) { setCart(null); setWishIds(new Set()); return; }
+    if (status === 'loading') return;
+    if (status === 'anonymous') {
+      setWishIds(new Set());
+      if (!cartTokenStore.get()) { setCart(null); return; }
+    }
     reloadCart();
-    wishlistApi.get().then((r) => setWishIds(new Set(r.data.map((i) => String(i.productId))))).catch(() => {});
-  }, [isAuthed, reloadCart]);
+    if (isAuthed) wishlistApi.get().then((r) => setWishIds(new Set(r.data.map((i) => String(i.productId))))).catch(() => {});
+  }, [status, isAuthed, reloadCart]);
 
   const requireAuth = useCallback(() => {
     if (isAuthed) return true;
@@ -30,9 +38,8 @@ export function ShopProvider({ children }) {
     return false;
   }, [isAuthed, navigate, location]);
 
-  /** Runs a cart mutation that returns the new cart view; surfaces API errors as toasts. */
+  /** Runs a cart mutation that returns the new cart view; surfaces API errors as toasts. No sign-in needed. */
   const mutate = useCallback(async (fn, successMsg) => {
-    if (!requireAuth()) return null;
     try {
       const r = await fn();
       setCart(r.data);
@@ -42,7 +49,7 @@ export function ShopProvider({ children }) {
       toast.error(errorMessage(err));
       throw err;
     }
-  }, [requireAuth, toast]);
+  }, [toast]);
 
   const addToCart = useCallback((body, msg = 'Added to cart') => mutate(() => cartApi.add(body), msg), [mutate]);
 

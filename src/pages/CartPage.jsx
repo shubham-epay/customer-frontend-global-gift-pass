@@ -7,14 +7,15 @@ import { EmptyState, PageLoader } from '../components/States';
 import { TrashIcon } from '../components/Icons';
 
 export function OrderSummary({ cart, children }) {
+  const cur = cart.currency && cart.currency !== 'MIXED' ? cart.currency : 'AED';
   return (
     <div className="summary card">
       <h3>Order summary</h3>
       <dl>
-        <div><dt>Subtotal ({cart.itemCount} item{cart.itemCount === 1 ? '' : 's'})</dt><dd>{money(cart.subtotal)}</dd></div>
-        {cart.discountTotal > 0 && <div className="discount"><dt>Discount{cart.coupon ? ` (${cart.coupon.code})` : ''}</dt><dd>−{money(cart.discountTotal)}</dd></div>}
-        <div className="muted"><dt>Includes VAT ({Math.round((cart.vatRate || 0) * 100)}%)</dt><dd>{money(cart.taxTotal)}</dd></div>
-        <div className="summary__total"><dt>Total</dt><dd>{money(cart.total)}</dd></div>
+        <div><dt>Subtotal ({cart.itemCount} item{cart.itemCount === 1 ? '' : 's'})</dt><dd>{money(cart.subtotal, cur)}</dd></div>
+        {cart.discountTotal > 0 && <div className="discount"><dt>Discount{cart.coupon ? ` (${cart.coupon.code})` : ''}</dt><dd>−{money(cart.discountTotal, cur)}</dd></div>}
+        <div className="muted"><dt>Includes VAT ({Math.round((cart.vatRate || 0) * 100)}%)</dt><dd>{money(cart.taxTotal, cur)}</dd></div>
+        <div className="summary__total"><dt>Total</dt><dd>{money(cart.total, cur)}</dd></div>
       </dl>
       {children}
     </div>
@@ -62,8 +63,9 @@ function CartLine({ line }) {
         {(line.recipient?.name || line.recipient?.email) && (
           <div className="small">For: {[line.recipient.name, line.recipient.email].filter(Boolean).join(' · ')}</div>
         )}
+        {line.amount != null && <div className="small">Amount: <strong>{money(line.amount, line.currency || it?.currency)}</strong></div>}
         {line.message && <div className="small muted clamp-2">“{line.message}”</div>}
-        {!line.available && <div className="error small">No longer available — please remove it to continue.</div>}
+        {!line.available && <div className="error small">{line.unavailableReason || 'No longer available'} — please remove it to continue.</div>}
       </div>
       <div className="stepper stepper--sm">
         <button type="button" disabled={!line.available || line.quantity <= 1} onClick={() => setQty(line.quantity - 1)} aria-label="Decrease">−</button>

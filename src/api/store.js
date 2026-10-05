@@ -7,13 +7,22 @@ const put = (url, body) => api.put(url, body).then((r) => r.data);
 const patch = (url, body) => api.patch(url, body).then((r) => r.data);
 const del = (url) => api.delete(url).then((r) => r.data);
 
+/**
+ * The visitor's country selection ("AE,SA", or null for Global) is added to every catalogue request,
+ * so pages don't need to pass it themselves. Set by CountryProvider.
+ */
+let countryParam = null;
+export const setCountryParam = (value) => { countryParam = value || null; };
+const scoped = (params = {}) => (countryParam ? { ...params, countries: countryParam } : params);
+
 export const catalog = {
-  home: () => get('/home'),
-  categories: () => get('/categories'),
-  categoryProducts: (slug, params) => get(`/categories/${encodeURIComponent(slug)}/products`, params),
-  products: (params) => get('/products', params),
-  product: (slug) => get(`/products/${encodeURIComponent(slug)}`),
-  search: (params) => get('/search', params),
+  home: () => get('/home', scoped()),
+  categories: () => get('/categories', scoped()),
+  categoryProducts: (slug, params) => get(`/categories/${encodeURIComponent(slug)}/products`, scoped(params)),
+  products: (params) => get('/products', scoped(params)),
+  product: (slug) => get(`/products/${encodeURIComponent(slug)}`, scoped()),
+  search: (params) => get('/search', scoped(params)),
+  countries: () => get('/countries'),
 };
 
 export const auth = {
@@ -32,6 +41,7 @@ export const cart = {
   applyCoupon: (code) => post('/checkout/apply-coupon', { code }),
   removeCoupon: () => del('/checkout/apply-coupon'),
   checkout: (body) => post('/checkout', body),
+  countries: () => get('/checkout/countries'),
 };
 
 export const wishlist = {
@@ -50,4 +60,19 @@ export const account = {
   orders: (params) => get('/orders', params),
   order: (id) => get(`/orders/${id}`),
   vouchers: (params) => get('/my-vouchers', params),
+};
+
+/**
+ * Online payment (SynraPay). Guests prove access to an order with the pay token returned at checkout,
+ * sent as X-Payment-Token; signed-in owners are recognised by their session.
+ */
+const payHeaders = (token) => (token ? { headers: { 'X-Payment-Token': token } } : undefined);
+export const payments = {
+  config: () => get('/payments/config'),
+  status: (orderNumber, token) => api.get(`/payments/${encodeURIComponent(orderNumber)}`, payHeaders(token)).then((r) => r.data),
+  start: (orderNumber, token, body) => api.post(`/payments/${encodeURIComponent(orderNumber)}/start`, body, payHeaders(token)).then((r) => r.data),
+  // Direct API: card details from our own form go to our backend, which forwards them to SynraPay.
+  directPay: (orderNumber, token, card) => api.post(`/payments/${encodeURIComponent(orderNumber)}/direct/pay`, { card }, payHeaders(token)).then((r) => r.data),
+  directAuthenticate: (orderNumber, token) => api.post(`/payments/${encodeURIComponent(orderNumber)}/direct/authenticate`, {}, payHeaders(token)).then((r) => r.data),
+  sendLink: (orderNumber, token, email) => api.post(`/payments/${encodeURIComponent(orderNumber)}/send-link`, email ? { email } : {}, payHeaders(token)).then((r) => r.data),
 };

@@ -89,7 +89,7 @@ export default function ListingPage({ mode }) {
             ))}
           </div>
           <form className="filters__group" onSubmit={applyPrice}>
-            <h4>Price (AED)</h4>
+            <h4>Price</h4>
             <div className="price-range">
               <input type="number" min="0" placeholder="Min" value={price.minPrice} onChange={(e) => setPrice({ ...price, minPrice: e.target.value })} />
               <input type="number" min="0" placeholder="Max" value={price.maxPrice} onChange={(e) => setPrice({ ...price, maxPrice: e.target.value })} />

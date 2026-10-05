@@ -20,9 +20,31 @@ export const setSessionExpiredHandler = (fn) => { onSessionExpired = fn; };
 
 export const api = axios.create({ baseURL, withCredentials: true, timeout: 20000 });
 
+/**
+ * Guest cart handle. The API issues it on a guest's first add-to-cart; it only addresses a cart
+ * (no account access), so it lives in localStorage and survives reloads. After sign-in the API merges
+ * the guest cart into the account and the handle is dropped.
+ */
+const CART_TOKEN_KEY = 'ggp-cart-token';
+export const cartTokenStore = {
+  get: () => { try { return localStorage.getItem(CART_TOKEN_KEY); } catch { return null; } },
+  set: (t) => { try { localStorage.setItem(CART_TOKEN_KEY, t); } catch { /* storage unavailable */ } },
+  clear: () => { try { localStorage.removeItem(CART_TOKEN_KEY); } catch { /* storage unavailable */ } },
+};
+
 api.interceptors.request.use((cfg) => {
   if (accessToken) cfg.headers.Authorization = `Bearer ${accessToken}`;
+  const cartToken = cartTokenStore.get();
+  if (cartToken && /^\/(cart|checkout)/.test(cfg.url || '')) cfg.headers['X-Cart-Token'] = cartToken;
   return cfg;
+});
+
+// Keep the guest cart handle in sync with what the API says.
+api.interceptors.response.use((r) => {
+  const d = r.data?.data;
+  if (d?.cartToken) cartTokenStore.set(d.cartToken);
+  if (d?.guestCartMerged) cartTokenStore.clear();
+  return r;
 });
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

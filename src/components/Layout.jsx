@@ -5,6 +5,9 @@ import { useShop } from '../auth/ShopContext';
 import { catalog } from '../api/store';
 import { SOCIAL_LINKS } from '../config/site';
 import Logo from './Logo';
+import CountryPicker from './CountryPicker';
+import CategoryBar from './CategoryBar';
+import { useCountries } from '../context/CountryContext';
 import { useToast } from './Toast';
 import {
   BoltIcon, BriefcaseIcon, CartIcon, FacebookIcon, GiftIcon, GridIcon, HomeIcon,
@@ -29,15 +32,6 @@ function SearchBox() {
   );
 }
 
-/** Category bar item: a plain link to the category page. */
-function NavItem({ category }) {
-  return (
-    <div className="catbar__item">
-      <NavLink to={`/c/${category.slug}`} className="catbar__link">{category.name}</NavLink>
-    </div>
-  );
-}
-
 const Chips = () => (
   <div className="chips-row">
     <Link to="/deals?featured=true" className="chip chip--amber"><SunIcon width={16} height={16} />Summer Deals</Link>
@@ -53,7 +47,7 @@ function Header({ categories }) {
     <header className="header">
       <div className="container header__top">
         <Logo />
-        <div className="header__search"><SearchBox /></div>
+        <div className="header__search"><SearchBox /><CountryPicker /></div>
         <div className="header__right">
           <Link to="/page/corporate" className="header__cta">
             <BriefcaseIcon />
@@ -70,12 +64,12 @@ function Header({ categories }) {
           </Link>
         </div>
       </div>
-      <div className="header__mobile-search container"><SearchBox /></div>
+      <div className="header__mobile-search container"><SearchBox /><CountryPicker compact /></div>
       <nav className="catbar" aria-label="Categories">
         <div className="container catbar__inner">
           <Chips />
           {categories.length > 0 && <span className="catbar__sep" />}
-          <div className={`catbar__links${categories.length >= 7 ? ' catbar__links--spread' : ''}`}>{categories.map((c) => <NavItem key={c._id} category={c} />)}</div>
+          <CategoryBar categories={categories} />
         </div>
       </nav>
     </header>
@@ -183,7 +177,8 @@ function TabBar() {
 export default function Layout() {
   const [categories, setCategories] = useState([]);
   const { pathname, hash } = useLocation();
-  useEffect(() => { catalog.categories().then((r) => setCategories(r.data)).catch(() => {}); }, []);
+  const { selectionKey } = useCountries();
+  useEffect(() => { catalog.categories().then((r) => setCategories(r.data)).catch(() => {}); }, [selectionKey]);
   useEffect(() => {
     if (hash) document.getElementById(hash.slice(1))?.scrollIntoView();
     else window.scrollTo(0, 0);
@@ -192,7 +187,8 @@ export default function Layout() {
   return (
     <div className="app">
       <Header categories={categories} />
-      <main className="main"><Outlet context={{ categories }} /></main>
+      {/* Remount the page when the country selection changes so it reloads for the new countries. */}
+      <main className="main" key={selectionKey}><Outlet context={{ categories }} /></main>
       <Footer categories={categories} />
       <TabBar />
     </div>

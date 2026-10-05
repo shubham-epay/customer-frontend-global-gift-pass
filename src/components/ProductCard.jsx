@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useShop } from '../auth/ShopContext';
 import { discountPct, imageOf, money } from '../utils/format';
 import { BagIcon } from './Icons';
@@ -18,10 +18,17 @@ function Badge({ product: p, off }) {
 /** "Gift pass card" from the design system: image + badge, title, one-line copy, price and a square add-to-cart button. */
 export default function ProductCard({ product: p }) {
   const { addToCart } = useShop();
+  const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
-  const off = discountPct(p.price, p.salePrice);
+  const openAmount = p.amountMin != null && p.amountMax != null;
+  const denoms = p.denominations || [];
+  const multi = denoms.length > 1;
+  const top = multi ? denoms.reduce((a, b) => (b.value > a.value ? b : a)) : null;
+  const off = openAmount || multi ? 0 : discountPct(p.price, p.salePrice);
 
   const add = async () => {
+    // Open amounts and denominations are chosen on the product page.
+    if (openAmount || multi) { navigate(`/p/${p.slug}`); return; }
     setBusy(true);
     try { await addToCart({ itemType: 'PRODUCT', productId: p._id, quantity: 1 }); } catch { /* toast shown */ } finally { setBusy(false); }
   };
@@ -37,10 +44,12 @@ export default function ProductCard({ product: p }) {
         {p.shortDescription && <p className="pass-card__text">{p.shortDescription}</p>}
         <div className="pass-card__foot">
           <div className="price">
-            <strong>{money(p.salePrice ?? p.price, p.currency)}</strong>
+            {openAmount && <span className="pass-card__from">From</span>}
+            <strong>{money(openAmount ? p.amountMin : multi ? top.price : p.salePrice ?? p.price, p.currency)}</strong>
+            {multi && <span className="pass-card__denoms">{denoms.length} denominations</span>}
             {off > 0 && <s>{money(p.price, p.currency)}</s>}
           </div>
-          <button type="button" className="add-btn" onClick={add} disabled={busy} aria-label={`Add ${p.title} to cart`}>
+          <button type="button" className="add-btn" onClick={add} disabled={busy} aria-label={openAmount || multi ? `Choose an amount for ${p.title}` : `Add ${p.title} to cart`}>
             <BagIcon width={18} height={18} />
           </button>
         </div>
