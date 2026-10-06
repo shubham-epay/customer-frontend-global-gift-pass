@@ -157,7 +157,7 @@ export default function CheckoutPage() {
   const [saveInfo, setSaveInfo] = useState(Boolean(saved));
   // Online payment (SynraPay): method dropdown; Pay By Link has a Standard or Quick link.
   const [payConfig, setPayConfig] = useState(null);
-  const [payment, setPayment] = useState({ method: 'CARD', linkType: 'STANDARD', expiresInHours: 24 });
+  const [payment, setPayment] = useState({ method: 'CARD', linkType: 'STANDARD', expiresInHours: 24, captureMode: 'CAPTURE' });
   const [billingSame, setBillingSame] = useState(true);
   const [bill, setBill] = useState(() => blankAddress(defaultCountry));
   const [errors, setErrors] = useState({});
@@ -260,6 +260,7 @@ export default function CheckoutPage() {
         saveInfo,
         paymentMethod: payment.method,
         ...(payment.method === 'PAY_BY_LINK' && { paymentLinkType: payment.linkType, paymentLinkExpiresInHours: payment.expiresInHours }),
+        ...(payment.method === 'DIRECT_CARD' && { directCaptureMode: payment.captureMode }),
         billingSameAsShipping: billingSame,
         ...(!billingSame && { billing: bill }),
       });

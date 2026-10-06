@@ -35,6 +35,11 @@ export const LINK_TYPES = [
   { id: 'QUICK', title: 'Quick link', text: 'Just the amount and your contact details, like an invoice. You’ll see the result on the payment page.' },
 ];
 
+export const CAPTURE_MODES = [
+  { id: 'AUTHORIZE', title: 'Authorize', text: 'Your card is only authorized: the amount is held, and charged once we confirm your order.' },
+  { id: 'CAPTURE', title: 'Direct capture', text: 'Your card is charged straight away and the order is paid immediately.' },
+];
+
 export const LINK_EXPIRY = [
   { hours: 24, label: '24 hours' },
   { hours: 72, label: '3 days' },
@@ -121,7 +126,7 @@ function MethodSelect({ options, value, onChange, disabled }) {
   );
 }
 
-/** Payment method dropdown. Pay By Link reveals its two link types and how long the link stays valid. */
+/** Payment method dropdown. Pay By Link reveals its link types and validity; Direct API its two capture modes. */
 export default function PaymentMethodPicker({ value, onChange, methods, disabled, children }) {
   const options = METHOD_OPTIONS.filter((m) => !methods || methods.includes(m.id));
   const current = options.find((m) => m.id === value.method) || options[0];
@@ -152,6 +157,17 @@ export default function PaymentMethodPicker({ value, onChange, methods, disabled
               {LINK_EXPIRY.map((o) => <option key={o.hours} value={o.hours}>{o.label}</option>)}
             </SelectField>
           </>
+        )}
+        {current?.id === 'DIRECT_CARD' && (
+          <div className="pm-links" role="radiogroup" aria-label="Capture mode">
+            {CAPTURE_MODES.map((t) => (
+              <label key={t.id} className={`pm-link${value.captureMode === t.id ? ' is-active' : ''}`}>
+                <input type="radio" name="captureMode" value={t.id} checked={value.captureMode === t.id} onChange={() => set({ captureMode: t.id })} disabled={disabled} />
+                <span className="co-radio" aria-hidden="true" />
+                <span><b>{t.title}</b><small>{t.text}</small></span>
+              </label>
+            ))}
+          </div>
         )}
         {children}
       </div>

@@ -39,7 +39,7 @@ export default function PayPage() {
   const [loading, setLoading] = useState(!state?.payment);
   const [checking, setChecking] = useState(false);
   const [switching, setSwitching] = useState(false);
-  const [choice, setChoice] = useState({ method: state?.payment?.method || 'HOSTED_SESSION', linkType: 'STANDARD', expiresInHours: 24 });
+  const [choice, setChoice] = useState({ method: state?.payment?.method || 'HOSTED_SESSION', linkType: 'STANDARD', expiresInHours: 24, captureMode: state?.payment?.direct?.captureMode || 'CAPTURE' });
   const [busy, setBusy] = useState(false);
   const [methods, setMethods] = useState(null);
   const confirmed = useRef(false);
@@ -117,6 +117,7 @@ export default function PayPage() {
       const { data } = await payments.start(orderNumber, token, {
         method: choice.method,
         ...(choice.method === 'PAY_BY_LINK' && { linkType: choice.linkType, expiresInHours: choice.expiresInHours }),
+        ...(choice.method === 'DIRECT_CARD' && { captureMode: choice.captureMode }),
       });
       if (data.payment.method === 'CARD' && data.payment.checkoutUrl) { window.location.assign(data.payment.checkoutUrl); return; }
       setPayment(data.payment);
@@ -184,6 +185,7 @@ export default function PayPage() {
             amountLabel={total}
             defaultName={snapshot?.customer?.name || ''}
             environment={payment.direct?.environment}
+            authorizeOnly={payment.direct?.captureMode === 'AUTHORIZE'}
             onPaid={(o) => goConfirmed(o || {})}
             onCheck={check}
           />

@@ -28,7 +28,7 @@ const BLANK = { number: '', expiry: '', cvv: '', name: '' };
  * cleared as soon as it has been sent. If the bank asks for 3-D Secure, its challenge page is shown
  * in a frame and the payment is finished by a second signed call from our backend.
  */
-export default function DirectCardPanel({ orderNumber, token, amountLabel, defaultName = '', environment, onPaid, onCheck }) {
+export default function DirectCardPanel({ orderNumber, token, amountLabel, defaultName = '', environment, authorizeOnly = false, onPaid, onCheck }) {
   const [card, setCard] = useState({ ...BLANK, name: defaultName });
   const [errors, setErrors] = useState({});
   const [phase, setPhase] = useState('form'); // form | paying | challenge | verifying | pending
@@ -187,7 +187,8 @@ export default function DirectCardPanel({ orderNumber, token, amountLabel, defau
         </div>
         <Field label="Name on card" value={card.name} onChange={(v) => set({ name: v })} error={errors.name} autoComplete="cc-name" maxLength={100} name="ccname" disabled={busy} />
       </div>
-      <button type="submit" className="co-pay" disabled={busy}>{busy ? 'Processing…' : `Pay ${amountLabel}`}</button>
+      {authorizeOnly && <p className="pay-muted">Authorize only: {amountLabel} is held on your card now and charged once we confirm your order.</p>}
+      <button type="submit" className="co-pay" disabled={busy}>{busy ? 'Processing…' : `${authorizeOnly ? 'Authorize' : 'Pay'} ${amountLabel}`}</button>
       <p className="pay-secure"><LockIcon width={14} height={14} /> Sent securely to SynraPay. We don’t store your card number or security code.</p>
     </form>
   );
