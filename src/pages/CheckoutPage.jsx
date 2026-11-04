@@ -170,7 +170,11 @@ export default function CheckoutPage() {
   useEffect(() => {
     payments.config().then((r) => {
       setPayConfig(r.data);
-      setPayment((p) => ({ ...p, expiresInHours: r.data.linkExpiry?.defaultHours || p.expiresInHours }));
+      setPayment((p) => ({
+        ...p,
+        expiresInHours: r.data.linkExpiry?.defaultHours || p.expiresInHours,
+        environment: p.environment || r.data.environments?.[0]?.id || r.data.environment,
+      }));
     }).catch(() => setPayConfig({ enabled: false }));
   }, []);
   // The method dropdown is always shown. If the API reports online payment as off, the order is
@@ -253,17 +257,38 @@ export default function CheckoutPage() {
     if (Object.keys(e).length) { focusFirstError(); return; }
     setBusy(true);
     try {
+      const payload = {
+  email: email.trim(),
+  ...ship,
+  phone: phoneFor(phone, ship.country),
+  saveInfo,
+  paymentMethod: payment.method,
+  ...(payment.environment && { paymentEnvironment: payment.environment }),
+  ...(payment.method === 'PAY_BY_LINK' && {
+    paymentLinkType: payment.linkType,
+    paymentLinkExpiresInHours: payment.expiresInHours,
+  }),
+  ...(payment.method === 'DIRECT_CARD' && {
+    directCaptureMode: payment.captureMode,
+  }),
+  billingSameAsShipping: billingSame,
+  ...(!billingSame && { billing: bill }),
+};
+
+console.log('Request Payload:', payload);
       const { data } = await cartApi.checkout({
         email: email.trim(),
         ...ship,
         phone: phoneFor(phone, ship.country),
         saveInfo,
         paymentMethod: payment.method,
+        ...(payment.environment && { paymentEnvironment: payment.environment }),
         ...(payment.method === 'PAY_BY_LINK' && { paymentLinkType: payment.linkType, paymentLinkExpiresInHours: payment.expiresInHours }),
         ...(payment.method === 'DIRECT_CARD' && { directCaptureMode: payment.captureMode }),
         billingSameAsShipping: billingSame,
         ...(!billingSame && { billing: bill }),
       });
+      console.log('Response Payload:', data);
       try {
         if (saveInfo && !isAuthed) localStorage.setItem(SAVED_KEY, JSON.stringify({ email: email.trim(), address: ship, phone }));
         else if (!saveInfo) localStorage.removeItem(SAVED_KEY);
@@ -389,7 +414,7 @@ export default function CheckoutPage() {
             <section>
               <h2>Payment</h2>
               <p className="co-sub">All transactions are secure and encrypted.</p>
-              <PaymentMethodPicker value={payment} onChange={setPayment} disabled={busy}>
+              <PaymentMethodPicker value={payment} onChange={setPayment} environments={payConfig?.environments} disabled={busy}>
                 <Check checked={billingSame} onChange={setBillingSame}>Use shipping address as billing address</Check>
                 {!billingSame && (
                   <div className="co-stack co-billing">

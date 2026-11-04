@@ -30,6 +30,13 @@ export const METHOD_OPTIONS = [
   },
 ];
 
+// SynraPay environments (each its own merchant account). The API says which ones are configured.
+export const ENVIRONMENTS = {
+  sandbox: { title: 'Sandbox', text: 'SynraPay sandbox account (sandbox-api.synrapay.com).' },
+  dev: { title: 'Dev', text: 'SynraPay development account (dev-api.synrapay.com).' },
+};
+export const envLabel = (id) => ENVIRONMENTS[id]?.title || id;
+
 export const LINK_TYPES = [
   { id: 'STANDARD', title: 'Standard link', text: 'Includes your order details. After paying you come back to Global Gift Pass.' },
   { id: 'QUICK', title: 'Quick link', text: 'Just the amount and your contact details, like an invoice. You’ll see the result on the payment page.' },
@@ -126,14 +133,30 @@ function MethodSelect({ options, value, onChange, disabled }) {
   );
 }
 
-/** Payment method dropdown. Pay By Link reveals its link types and validity; Direct API its two capture modes. */
-export default function PaymentMethodPicker({ value, onChange, methods, disabled, children }) {
+/**
+ * SynraPay environment and payment method. The environment choice is shown when the API offers
+ * environments ([{ id, label }]); every method (Hosted Checkout, Hosted Session, Direct API,
+ * Pay By Link) runs in the chosen one.
+ * Pay By Link reveals its link types and validity; Direct API its two capture modes.
+ */
+export default function PaymentMethodPicker({ value, onChange, methods, environments, disabled, children }) {
   const options = METHOD_OPTIONS.filter((m) => !methods || methods.includes(m.id));
   const current = options.find((m) => m.id === value.method) || options[0];
   const set = (patch) => onChange({ ...value, ...patch });
 
   return (
     <div className="pm">
+      {environments?.length > 0 && (
+        <div className="pm-links pm-env" role="radiogroup" aria-label="SynraPay environment">
+          {environments.map((e) => (
+            <label key={e.id} className={`pm-link${value.environment === e.id ? ' is-active' : ''}`}>
+              <input type="radio" name="environment" value={e.id} checked={value.environment === e.id} onChange={() => set({ environment: e.id })} disabled={disabled || environments.length < 2} />
+              <span className="co-radio" aria-hidden="true" />
+              <span><b>{ENVIRONMENTS[e.id]?.title || e.label}</b><small>{ENVIRONMENTS[e.id]?.text || ''}</small></span>
+            </label>
+          ))}
+        </div>
+      )}
       <MethodSelect options={options} value={current?.id} onChange={(method) => set({ method })} disabled={disabled} />
 
       <div className="co-pay-opt__body pm__body">

@@ -2,6 +2,11 @@ import axios from 'axios';
 
 const baseURL = import.meta.env.VITE_API_BASE_URL || '/api';
 
+const logApiRoute = (method, url) => {
+  const requestUrl = new URL(url, window.location.origin);
+  console.log(`[api] ${method.toUpperCase()} ${requestUrl.origin}${requestUrl.pathname}`);
+};
+
 /**
  * Token storage strategy (mirrors the admin panel)
  *  - Access token: kept ONLY in memory (this module), never in web storage.
@@ -36,6 +41,7 @@ api.interceptors.request.use((cfg) => {
   if (accessToken) cfg.headers.Authorization = `Bearer ${accessToken}`;
   const cartToken = cartTokenStore.get();
   if (cartToken && /^\/(cart|checkout)/.test(cfg.url || '')) cfg.headers['X-Cart-Token'] = cartToken;
+  logApiRoute(cfg.method || 'get', api.getUri(cfg));
   return cfg;
 });
 
@@ -56,7 +62,9 @@ export function refreshSession() {
     refreshPromise = (async () => {
       for (let attempt = 0; attempt < 2; attempt += 1) {
         try {
-          const { data } = await axios.post(`${baseURL}/auth/refresh`, null, { withCredentials: true, timeout: 15000 });
+          const refreshUrl = `${baseURL}/auth/refresh`;
+          logApiRoute('post', refreshUrl);
+          const { data } = await axios.post(refreshUrl, null, { withCredentials: true, timeout: 15000 });
           accessToken = data.data.accessToken;
           return data.data;
         } catch (err) {

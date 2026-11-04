@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { LockIcon } from '../Icons';
+import { envLabel } from './PaymentMethodPicker';
 
 const scripts = new Map();
 const SDK_TIMEOUT_MS = 15000;
@@ -23,7 +24,7 @@ function loadSdk(src) {
 // The embedded form can't be used for this order, but SynraPay's own page can.
 const FALLBACK = ['PROVIDER_UNAVAILABLE', 'PROVIDER_UNSUPPORTED', 'SDK_LOAD_FAILED'];
 // The session is gone; a new attempt is needed.
-const RESTART = ['SESSION_EXPIRED', 'INVALID_SESSION', 'INVALID_CLIENT_TOKEN', 'ORDER_NOT_FOUND'];
+const RESTART = ['SESSION_EXPIRED', 'INVALID_SESSION', 'INVALID_CLIENT_TOKEN', 'ENVIRONMENT_MISMATCH', 'ORDER_NOT_FOUND', 'TOKEN_EXPIRED'];
 
 /**
  * SynraPay's card fields mounted in our page. The SDK talks to SynraPay directly; card data never
@@ -50,30 +51,23 @@ export default function HostedSessionPanel({ session, amountLabel, onCompleted, 
     loadSdk(session.sdkUrl)
       .then(() => {
         if (!live) return;
-        if (!window.SynraHostedSession) throw new Error('The secure card form failed to start.');
+        if (!window.SynraPayFields) throw new Error('The secure card form failed to start.');
         box.innerHTML = '';
-        handle.current = window.SynraHostedSession.mount({
+        // The client token is a credential for the card form: only its start is logged.
+        console.log('[hosted-session] SDK create payload:', { clientToken: `${String(session.clientToken).slice(0, 8)}...`, container: '#synra-card', sdkUrl: session.sdkUrl });
+        const fields = window.SynraPayFields.create({
           clientToken: session.clientToken, // from Create Session, passed unchanged
           container: '#synra-card',
-          onReady: () => live && setPhase('ready'),
-          onCard: (c) => live && setCard(c),
-          onCompleted: (r) => {
-            if (!live) return;
-            // ok: paid. pending: the bank hasn't answered yet. Either way our API (webhook / Get Status)
-            // has the real answer, so keep "Processing" and let the page wait for it.
-            if (r.ok || r.status === 'pending') { done.current = true; setPhase('paying'); completed.current(r); } else {
-              setPhase('ready');
-              setError({ code: 'DECLINED', message: r.message || 'The payment was not completed. Check your card details or try another card.' });
-            }
-          },
-          onError: (e) => {
-            if (!live) return;
-            setError({ code: e.code, message: e.displayed ? null : e.message }); // displayed: the SDK already shows it
-            const fatal = FALLBACK.includes(e.code) || RESTART.includes(e.code);
-            // An error before the fields are ready (e.g. SynraPay could not be reached from this page)
-            // means there is no form to pay with: 'error' shows the notice instead of a dead Pay button.
-            setPhase((p) => (fatal || p === 'loading' ? 'error' : 'ready'));
-          },
+          redirect: false, // stay on our pay page: the webhook / Get Status decide if the order is paid
+        });
+        handle.current = fields;
+        fields.on('ready', () => { console.log('[hosted-session] SDK ready'); if (live) setPhase('ready'); });
+        fields.on('error', (e) => {
+          console.log('[hosted-session] SDK error response:', e);
+          if (!live) return;
+          setError({ code: e.code, message: e.message });
+          // The fields cannot be used after an 'error' event: show the notice instead of a dead Pay button.
+          setPhase('error');
         });
       })
       .catch((e) => {
@@ -97,10 +91,19 @@ export default function HostedSessionPanel({ session, amountLabel, onCompleted, 
     if (!handle.current) return;
     setError(null);
     setPhase('paying');
-    try { await handle.current.pay(); } catch (e) { setError({ code: 'PAY_FAILED', message: e.message }); }
-    // pay() also settles with no callback: the bank's 3-D Secure screen opened, or the SDK showed an
-    // error inside the form. Only a successful payment keeps the button on "Processing".
-    setPhase((p) => (p === 'paying' && !done.current ? 'ready' : p));
+    console.log('[hosted-session] SDK submit() called');
+    let r;
+    try { r = await handle.current.submit(); } catch (e) { setError({ code: 'PAY_FAILED', message: e.message }); setPhase('ready'); return; }
+    console.log('[hosted-session] SDK submit() response:', r);
+    // 3-D Secure: the tab is leaving for the bank check and comes back to this page. Show nothing.
+    if (r.navigating) return;
+    if (r.card) setCard(r.card);
+    // ok: paid. pending: the bank hasn't answered yet. Either way our API (webhook / Get Status)
+    // has the real answer, so keep "Processing" and let the page wait for it.
+    if (r.ok || String(r.status).toLowerCase() === 'pending') { done.current = true; completed.current(r); return; }
+    if (r.status === 'DESTROYED') return;
+    setPhase('ready');
+    setError({ code: r.error_code || 'DECLINED', message: r.error_message || 'The payment was not completed. Check your card details or try another card.' });
   };
 
   const restart = RESTART.includes(error?.code);
@@ -112,7 +115,7 @@ export default function HostedSessionPanel({ session, amountLabel, onCompleted, 
     <section className="pay-card">
       <div className="pay-card__head">
         <h2>Card details</h2>
-        {session.environment === 'sandbox' && <span className="pay-tag">Test mode</span>}
+        {session.environment && <span className="pay-tag">{envLabel(session.environment)} · test mode</span>}
       </div>
       {unavailable && (
         <div className="pay-notice" role="alert">

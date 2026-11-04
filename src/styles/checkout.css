@@ -107,6 +107,13 @@
 .pay-badge--visa { background: #1A1FCB; font-style: italic; letter-spacing: .3px; }
 .pay-badge--amex { background: #1F72CD; font-size: 8.5px; letter-spacing: .4px; text-align: center; }
 .pay-badge--unionpay { background: linear-gradient(90deg, #D8232A 0 33%, #1A5BA6 33% 66%, #00908C 66%); font-size: 7.5px; font-style: italic; text-align: center; }
+.pay-badge--discover { background: #F58220; font-size: 9px; letter-spacing: .3px; }
+.pay-badge--diners { background: #0079BE; font-size: 7.5px; text-align: center; }
+.pay-badge--jcb { background: linear-gradient(90deg, #0E4C96 0 33%, #E21836 33% 66%, #00A04A 66%); font-size: 10px; }
+.pay-badge--mir { background: #0F754E; font-size: 10px; letter-spacing: .3px; }
+.pay-badge--generic { background: transparent; color: var(--co-ink); }
+.pay-brand { display: inline-flex; transition: opacity .15s; }
+.pay-brand.is-dim { opacity: .3; }
 .pay-badge--tabby { background: #3BFFC1; color: #292929; font-size: 11px; letter-spacing: -.3px; }
 .pay-badge--tamara { background: #000; }
 
@@ -233,6 +240,7 @@
 .pm-link input:focus-visible + .co-radio { outline: 2px solid var(--co-accent); outline-offset: 2px; }
 .pm-link b { display: block; font-size: 14.5px; }
 .pm-link small { display: block; margin-top: 4px; color: var(--co-muted); font-size: 13px; line-height: 1.45; }
+.pm-env { margin-bottom: 12px; }
 
 /* ---------- pay page ---------- */
 .pay-page { width: 100%; max-width: 560px; margin: 0 auto; padding: 32px 16px 64px; display: grid; gap: 18px; align-content: start; }

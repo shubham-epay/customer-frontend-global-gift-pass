@@ -1,56 +1,71 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { payments } from '../../api/store';
 import { errorMessage, fieldErrors } from '../../api/client';
-import { Field } from '../checkout/Fields';
-import { Amex, Mastercard, Visa } from '../checkout/Badges';
+import { Check, Field } from '../checkout/Fields';
+import { Amex, CARD_BRAND_BADGES, GenericCard, Mastercard, Visa } from '../checkout/Badges';
 import { LockIcon } from '../Icons';
+import { envLabel } from './PaymentMethodPicker';
+import {
+  blockDrop, cardNumberMaxLength, detectCardBrand, digitKeysOnly, digitPasteOnly, formatCardNumber, formatCvv,
+  formatExpiry, normalizeName, onlyDigits, validateCard,
+} from '../../utils/cardValidation';
 
-const digits = (v) => v.replace(/\D/g, '');
-const luhnOk = (d) => {
-  let sum = 0;
-  for (let i = d.length - 1, alt = false; i >= 0; i -= 1, alt = !alt) {
-    let n = Number(d[i]);
-    if (alt) { n *= 2; if (n > 9) n -= 9; }
-    sum += n;
-  }
-  return sum % 10 === 0;
-};
-const formatNumber = (v) => digits(v).slice(0, 19).replace(/(\d{4})(?=\d)/g, '$1 ');
-const formatExpiry = (v) => {
-  const d = digits(v).slice(0, 4);
-  return d.length > 2 ? `${d.slice(0, 2)}/${d.slice(2)}` : d;
-};
+// Brands always shown in the header; the one matching the typed card stays bright, the others dim.
+const HEADER_BRANDS = [['mastercard', Mastercard], ['visa', Visa], ['amex', Amex]];
+// Shared by the number, expiry and security code fields: no letters by keyboard, paste or drag-and-drop.
+const numericGuards = { onPaste: digitPasteOnly, onDrop: blockDrop };
 const BLANK = { number: '', expiry: '', cvv: '', name: '' };
+const NEW_CARD = 'new';
+const cardLabel = (c) => `${c.brand || 'Card'} •••• ${c.last4}`;
 
 /**
  * SynraPay Direct API: our own card form. The card is posted to our backend over the same origin,
  * which forwards it to SynraPay in a signed call; it is kept only in this component's state and
  * cleared as soon as it has been sent. If the bank asks for 3-D Secure, its challenge page is shown
  * in a frame and the payment is finished by a second signed call from our backend.
+ * A signed-in shopper can also pay with a card saved earlier (no number or security code needed) and
+ * choose to save the card they type; saved cards are held by SynraPay, we only see brand and last 4.
  */
-export default function DirectCardPanel({ orderNumber, token, amountLabel, defaultName = '', environment, authorizeOnly = false, onPaid, onCheck }) {
+export default function DirectCardPanel({ orderNumber, token, amountLabel, defaultName = '', environment, authorizeOnly = false, canSaveCards = false, onPaid, onCheck }) {
   const [card, setCard] = useState({ ...BLANK, name: defaultName });
   const [errors, setErrors] = useState({});
   const [phase, setPhase] = useState('form'); // form | paying | challenge | verifying | pending
   const [challenge, setChallenge] = useState(null); // issuer's 3-D Secure HTML
   const [message, setMessage] = useState(null); // { tone: 'error' | 'info', text }
+  const [wallet, setWallet] = useState({ enabled: false, cards: [] });
+  const [selected, setSelected] = useState(NEW_CARD); // a saved card's id, or NEW_CARD
+  const [saveCard, setSaveCard] = useState(false);
   const finishing = useRef(false);
+
+  const loadWallet = useCallback(async () => {
+    if (!canSaveCards) return;
+    try {
+      const { data } = await payments.savedCards(orderNumber, token);
+      setWallet(data);
+      setSelected((cur) => (data.cards.some((c) => c.id === cur) ? cur : data.cards[0]?.id || NEW_CARD));
+    } catch { /* saved cards are optional: the card form still works */ }
+  }, [canSaveCards, orderNumber, token]);
+  useEffect(() => { loadWallet(); }, [loadWallet]);
+
+  const removeSaved = async (c) => {
+    if (!window.confirm(`Remove ${cardLabel(c)} from your saved cards?`)) return;
+    try {
+      await payments.removeSavedCard(c.id, environment);
+      setMessage(null);
+    } catch (err) {
+      setMessage({ tone: 'error', text: errorMessage(err) });
+    }
+    loadWallet();
+  };
 
   const set = (patch) => { setCard((c) => ({ ...c, ...patch })); setErrors((e) => { const n = { ...e }; Object.keys(patch).forEach((k) => delete n[k]); return n; }); };
 
-  const validate = () => {
-    const e = {};
-    const num = digits(card.number);
-    if (num.length < 12 || num.length > 19 || !luhnOk(num)) e.number = 'Enter a valid card number';
-    const [mm, yy] = card.expiry.split('/');
-    const month = Number(mm);
-    const now = new Date();
-    if (!/^\d{2}$/.test(mm || '') || !/^\d{2}$/.test(yy || '') || month < 1 || month > 12) e.expiry = 'Enter the expiry date as MM/YY';
-    else if (2000 + Number(yy) < now.getFullYear() || (2000 + Number(yy) === now.getFullYear() && month < now.getMonth() + 1)) e.expiry = 'This card has expired';
-    if (!/^\d{3,4}$/.test(card.cvv)) e.cvv = 'Enter the 3 or 4 digit security code';
-    if (!/^[\p{L} .'-]{2,100}$/u.test(card.name.trim())) e.name = 'Enter the name as shown on the card';
-    return e;
-  };
+  // Brand from the card number's BIN (data/cardBins.json): picks the icon and the security code length.
+  const brand = detectCardBrand(card.number);
+  const BrandBadge = (brand && CARD_BRAND_BADGES[brand.brand]) || GenericCard;
+
+  // Number, Luhn, brand length, expiry, security code and name (incl. injection checks): utils/cardValidation.js
+  const validate = () => validateCard(card);
 
   /** One place that turns an API result into what the shopper sees. */
   const handle = useCallback((r) => {
@@ -81,15 +96,31 @@ export default function DirectCardPanel({ orderNumber, token, amountLabel, defau
 
   const pay = async (ev) => {
     ev.preventDefault();
-    const e = validate();
+    const useSaved = selected !== NEW_CARD;
+    const e = useSaved ? {} : validate();
     setErrors(e);
     if (Object.keys(e).length) return;
     setPhase('paying');
     setMessage(null);
     const [mm, yy] = card.expiry.split('/');
+    const browserDetails = {
+      acceptHeaders: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      colorDepth: window.screen.colorDepth,
+      javaEnabled: false,
+      language: (navigator.language || 'en').slice(0, 35),
+      screenHeight: window.screen.height,
+      screenWidth: window.screen.width,
+      timeZone: new Date().getTimezoneOffset(),
+    };
     try {
       const { data } = await payments.directPay(orderNumber, token, {
-        number: digits(card.number), expiry_month: mm, expiry_year: yy, cvv: card.cvv, name: card.name.trim(),
+        browser_details: browserDetails,
+        ...(useSaved
+          ? { paymentMethodId: selected }
+          : {
+            card: { number: onlyDigits(card.number), expiry_month: mm, expiry_year: yy, cvv: card.cvv, name: normalizeName(card.name) },
+            ...(wallet.enabled && { saveCard }),
+          }),
       });
       // The card has been sent: don't keep the number or security code in the page any longer.
       setCard((c) => ({ ...BLANK, name: c.name }));
@@ -104,6 +135,7 @@ export default function DirectCardPanel({ orderNumber, token, amountLabel, defau
       });
       setPhase('form');
       setMessage({ tone: 'error', text: errorMessage(err) });
+      if (useSaved) loadWallet(); // the saved card may have been removed or expired
     }
   };
 
@@ -131,13 +163,14 @@ export default function DirectCardPanel({ orderNumber, token, amountLabel, defau
   }, [phase, finish]);
 
   const busy = phase === 'paying';
+  const useSaved = selected !== NEW_CARD;
 
   if (phase === 'challenge' || phase === 'verifying') {
     return (
       <section className="pay-card">
         <div className="pay-card__head">
           <h2>Verify with your bank</h2>
-          {environment === 'sandbox' && <span className="pay-tag">Test mode</span>}
+          {environment && <span className="pay-tag">{envLabel(environment)} · test mode</span>}
         </div>
         <p className="pay-muted">Your bank needs to confirm this payment. Complete the step below; this page continues automatically.</p>
         {challenge && (
@@ -174,19 +207,67 @@ export default function DirectCardPanel({ orderNumber, token, amountLabel, defau
       <div className="pay-card__head">
         <h2>Card details</h2>
         <span className="co-pay-opt__badges">
-          {environment === 'sandbox' && <span className="pay-tag">Test mode</span>}
-          <Mastercard /><Visa /><Amex />
+          {environment && <span className="pay-tag">{envLabel(environment)} · test mode</span>}
+          {HEADER_BRANDS.map(([key, Badge]) => (
+            <span key={key} className={`pay-brand ${brand && brand.brand !== key ? 'is-dim' : ''}`}><Badge /></span>
+          ))}
         </span>
       </div>
       {message && <p className={message.tone === 'error' ? 'pay-error' : 'pay-muted'} role="alert">{message.text}</p>}
+      {wallet.cards.length > 0 && (
+        <div className="co-pay-list" role="radiogroup" aria-label="Card to pay with">
+          {wallet.cards.map((c) => (
+            <div key={c.id} className={`co-pay-opt ${selected === c.id ? 'is-active' : ''}`}>
+              <label className="co-pay-opt__head">
+                <input type="radio" name="dc-card" checked={selected === c.id} onChange={() => setSelected(c.id)} disabled={busy} />
+                <span className="co-radio" />
+                <span className="co-pay-opt__label">{cardLabel(c)} <span className="pay-muted">expires {c.expiryMonth}/{c.expiryYear}</span></span>
+                <button type="button" className="pay-switch" onClick={(e) => { e.preventDefault(); removeSaved(c); }} disabled={busy}>Remove</button>
+              </label>
+            </div>
+          ))}
+          <div className={`co-pay-opt ${useSaved ? '' : 'is-active'}`}>
+            <label className="co-pay-opt__head">
+              <input type="radio" name="dc-card" checked={!useSaved} onChange={() => setSelected(NEW_CARD)} disabled={busy} />
+              <span className="co-radio" />
+              <span className="co-pay-opt__label">Use a new card</span>
+            </label>
+          </div>
+        </div>
+      )}
+      {!useSaved && (
       <div className="co-stack">
-        <Field label="Card number" value={card.number} onChange={(v) => set({ number: formatNumber(v) })} error={errors.number} inputMode="numeric" autoComplete="cc-number" maxLength={23} name="cardnumber" disabled={busy} />
+        {/* Every onChange below re-formats through cardValidation, which drops anything that isn't a digit
+            (covers mobile keyboards and autofill that skip the key/paste guards). */}
+        <Field
+          label="Card number" value={card.number} error={errors.number} name="cardnumber" disabled={busy}
+          onChange={(v) => {
+            const number = formatCardNumber(v);
+            // A shorter security code for the new brand (Amex 4 -> Visa 3) is trimmed right away.
+            set({ number, ...(card.cvv && { cvv: formatCvv(card.cvv, detectCardBrand(number)) }) });
+          }}
+          prefix={<span className="cf__prefix" title={brand?.label || 'Card'} aria-live="polite"><BrandBadge /></span>}
+          inputMode="numeric" pattern="[0-9 ]*" autoComplete="cc-number" maxLength={cardNumberMaxLength(card.number)}
+          onKeyDown={digitKeysOnly(' ')} {...numericGuards}
+        />
         <div className="cf-row">
-          <Field label="Expiry (MM/YY)" value={card.expiry} onChange={(v) => set({ expiry: formatExpiry(v) })} error={errors.expiry} inputMode="numeric" autoComplete="cc-exp" maxLength={5} name="cc-exp" disabled={busy} />
-          <Field label="Security code" type="password" value={card.cvv} onChange={(v) => set({ cvv: digits(v).slice(0, 4) })} error={errors.cvv} inputMode="numeric" autoComplete="cc-csc" maxLength={4} name="cvc" disabled={busy} help="The 3 digits on the back of your card (4 on the front for American Express)." />
+          <Field
+            label="Expiry (MM/YY)" value={card.expiry} onChange={(v) => set({ expiry: formatExpiry(v) })} error={errors.expiry} name="cc-exp" disabled={busy}
+            inputMode="numeric" pattern="[0-9/]*" autoComplete="cc-exp" maxLength={5}
+            onKeyDown={digitKeysOnly('/')} {...numericGuards}
+          />
+          <Field
+            label="Security code" type="password" value={card.cvv} onChange={(v) => set({ cvv: formatCvv(v, brand) })} error={errors.cvv} name="cvc" disabled={busy}
+            inputMode="numeric" pattern="[0-9]*" autoComplete="cc-csc" maxLength={brand?.cvvLength ?? 4}
+            onKeyDown={digitKeysOnly()} {...numericGuards}
+            help="The 3 digits on the back of your card (4 on the front for American Express)."
+          />
         </div>
         <Field label="Name on card" value={card.name} onChange={(v) => set({ name: v })} error={errors.name} autoComplete="cc-name" maxLength={100} name="ccname" disabled={busy} />
+        {wallet.enabled && <Check checked={saveCard} onChange={setSaveCard}>Save this card for next time</Check>}
       </div>
+      )}
+      {useSaved && <p className="pay-muted">No card number or security code needed. Your bank may still ask you to verify the payment.</p>}
       {authorizeOnly && <p className="pay-muted">Authorize only: {amountLabel} is held on your card now and charged once we confirm your order.</p>}
       <button type="submit" className="co-pay" disabled={busy}>{busy ? 'Processing…' : `${authorizeOnly ? 'Authorize' : 'Pay'} ${amountLabel}`}</button>
       <p className="pay-secure"><LockIcon width={14} height={14} /> Sent securely to SynraPay. We don’t store your card number or security code.</p>

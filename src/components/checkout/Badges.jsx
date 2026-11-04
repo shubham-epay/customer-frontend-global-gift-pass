@@ -8,6 +8,27 @@ export const Mastercard = () => (
 export const Visa = () => <span className="pay-badge pay-badge--visa" aria-label="Visa">VISA</span>;
 export const Amex = () => <span className="pay-badge pay-badge--amex" aria-label="American Express">AM<br />EX</span>;
 export const UnionPay = () => <span className="pay-badge pay-badge--unionpay" aria-label="UnionPay">Union<br />Pay</span>;
+export const Discover = () => <span className="pay-badge pay-badge--discover" aria-label="Discover">DISC</span>;
+export const Diners = () => <span className="pay-badge pay-badge--diners" aria-label="Diners Club">Diners<br />Club</span>;
+export const Jcb = () => <span className="pay-badge pay-badge--jcb" aria-label="JCB">JCB</span>;
+export const Maestro = () => (
+  <span className="pay-badge pay-badge--dark" aria-label="Maestro">
+    <svg width="26" height="16" viewBox="0 0 26 16" aria-hidden="true"><circle cx="9" cy="8" r="7" fill="#0099DF" /><circle cx="17" cy="8" r="7" fill="#ED0006" /><path d="M13 2.6a7 7 0 0 1 0 10.8 7 7 0 0 1 0-10.8Z" fill="#6C6BBD" /></svg>
+  </span>
+);
+export const Mir = () => <span className="pay-badge pay-badge--mir" aria-label="Mir">MIR</span>;
+/** A card with no brand yet: shown in the card number field until the BIN identifies the brand. */
+export const GenericCard = () => (
+  <span className="pay-badge pay-badge--generic" aria-label="Card">
+    <svg width="22" height="16" viewBox="0 0 22 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><rect x="1" y="1.5" width="20" height="13" rx="2" /><path d="M1 5.5h20M4 11h5" /></svg>
+  </span>
+);
+
+/** Badge for each brand key used in data/cardBins.csv. */
+export const CARD_BRAND_BADGES = {
+  visa: Visa, mastercard: Mastercard, amex: Amex, discover: Discover, diners: Diners, jcb: Jcb, unionpay: UnionPay, maestro: Maestro, mir: Mir,
+};
+
 export const Tabby = () => <span className="pay-badge pay-badge--tabby" aria-label="Tabby">tabby</span>;
 export const Tamara = () => (
   <span className="pay-badge pay-badge--tamara" aria-label="Tamara">

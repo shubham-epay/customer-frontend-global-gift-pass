@@ -5,7 +5,7 @@ import { errorMessage } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import Logo from '../components/Logo';
 import { BagIcon } from '../components/Icons';
-import PaymentMethodPicker from '../components/payment/PaymentMethodPicker';
+import PaymentMethodPicker, { envLabel } from '../components/payment/PaymentMethodPicker';
 import HostedSessionPanel from '../components/payment/HostedSessionPanel';
 import PaymentLinkPanel from '../components/payment/PaymentLinkPanel';
 import DirectCardPanel from '../components/payment/DirectCardPanel';
@@ -39,9 +39,10 @@ export default function PayPage() {
   const [loading, setLoading] = useState(!state?.payment);
   const [checking, setChecking] = useState(false);
   const [switching, setSwitching] = useState(false);
-  const [choice, setChoice] = useState({ method: state?.payment?.method || 'HOSTED_SESSION', linkType: 'STANDARD', expiresInHours: 24, captureMode: state?.payment?.direct?.captureMode || 'CAPTURE' });
+  const [choice, setChoice] = useState({ method: state?.payment?.method || 'CARD', linkType: 'STANDARD', expiresInHours: 24, captureMode: state?.payment?.direct?.captureMode || 'CAPTURE', environment: state?.payment?.environment });
   const [busy, setBusy] = useState(false);
   const [methods, setMethods] = useState(null);
+  const [environments, setEnvironments] = useState(null);
   const confirmed = useRef(false);
 
   const goConfirmed = useCallback((o) => {
@@ -61,13 +62,26 @@ export default function PayPage() {
     if (done(data.order)) { goConfirmed(data.order); return data; }
     // Keep a hosted session that's mounted (its client token isn't returned by the status call).
     setPayment((p) => (p?.session?.clientToken && p._id === data.payment?._id ? { ...p, status: data.payment.status } : data.payment));
+    // Retrying or switching method starts out in the environment of the latest attempt.
+    if (data.payment?.environment) setChoice((c) => (c.environment ? c : { ...c, environment: data.payment.environment }));
     return data;
   }, [orderNumber, token, goConfirmed]);
 
   // First load, and the return from SynraPay: poll briefly because the webhook may land a moment later.
   useEffect(() => {
     let live = true;
-    payments.config().then((r) => live && setMethods(r.data.methods)).catch(() => {});
+    if (params.get('directReturn') === '1' && window.parent !== window) {
+      window.parent.postMessage({ type: 'synrapay-3ds-return' }, window.location.origin);
+      return () => { live = false; };
+    }
+    payments.config().then((r) => {
+      if (!live) return;
+      setMethods(r.data.methods);
+      setEnvironments(r.data.environments || null);
+      // Keep the environment of the order's attempt when it is still offered, else the default.
+      const offered = (r.data.environments || []).map((e) => e.id);
+      setChoice((c) => ({ ...c, environment: offered.includes(c.environment) ? c.environment : offered[0] || r.data.environment }));
+    }).catch(() => {});
     (async () => {
       const tries = params.get('result') === 'success' ? 6 : 1;
       for (let i = 0; i < tries && live; i += 1) {
@@ -116,6 +130,7 @@ export default function PayPage() {
     try {
       const { data } = await payments.start(orderNumber, token, {
         method: choice.method,
+        ...(choice.environment && { environment: choice.environment }),
         ...(choice.method === 'PAY_BY_LINK' && { linkType: choice.linkType, expiresInHours: choice.expiresInHours }),
         ...(choice.method === 'DIRECT_CARD' && { captureMode: choice.captureMode }),
       });
@@ -161,6 +176,10 @@ export default function PayPage() {
   const showDirect = !switching && !closed && !loading && payment?.method === 'DIRECT_CARD';
   const showPicker = !closed && !loading && (switching || !(showSession || showLink || showDirect));
 
+  if (params.get('directReturn') === '1' && window.parent !== window) {
+    return <div className="co-empty"><p>Verification complete. You can return to the payment window.</p></div>;
+  }
+
   return (
     <div className="co">
       {header}
@@ -186,6 +205,7 @@ export default function PayPage() {
             defaultName={snapshot?.customer?.name || ''}
             environment={payment.direct?.environment}
             authorizeOnly={payment.direct?.captureMode === 'AUTHORIZE'}
+            canSaveCards={isAuthed}
             onPaid={(o) => goConfirmed(o || {})}
             onCheck={check}
           />
@@ -203,7 +223,8 @@ export default function PayPage() {
         {showPicker && (
           <form className="pay-card" onSubmit={start}>
             <h2>{payment ? 'Choose how to pay' : 'Pay for your order'}</h2>
-            <PaymentMethodPicker value={choice} onChange={setChoice} methods={methods} disabled={busy} />
+            {payment?.environment && <p className="pay-muted">Last attempt: {envLabel(payment.environment)} environment.</p>}
+            <PaymentMethodPicker value={choice} onChange={setChoice} methods={methods} environments={environments} disabled={busy} />
             <button type="submit" className="co-pay" disabled={busy}>
               {busy ? 'Please wait…' : choice.method === 'PAY_BY_LINK' ? 'Create payment link' : choice.method === 'CARD' ? 'Continue to payment' : 'Continue to card details'}
             </button>
