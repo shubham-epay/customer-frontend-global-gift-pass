@@ -41,7 +41,7 @@ function loadSdk(src) {
 }
 
 // The session is gone; a new attempt is needed.
-const RESTART = ['SESSION_EXPIRED', 'INVALID_SESSION', 'INVALID_CLIENT_TOKEN', 'NO_CLIENT_TOKEN', 'ENVIRONMENT_MISMATCH', 'ORDER_NOT_FOUND', 'TOKEN_EXPIRED', 'SESSION_ERROR'];
+const RESTART = ['SESSION_EXPIRED', 'INVALID_SESSION', 'INVALID_CLIENT_TOKEN', 'NO_CLIENT_TOKEN', 'ENVIRONMENT_MISMATCH', 'ORDER_NOT_FOUND', 'TOKEN_EXPIRED', 'SESSION_ERROR', 'HOSTED_FIELDS_ATTEMPTS_EXHAUSTED'];
 // Passing problems the fields recover from by themselves (they already show what's wrong, or are busy).
 const TRANSIENT = ['VALIDATION_FAILED', 'NOT_READY', 'BUSY'];
 
