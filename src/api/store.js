@@ -8,21 +8,6 @@ const patch = (url, body) => api.patch(url, body).then((r) => r.data);
 const del = (url) => api.delete(url).then((r) => r.data);
 
 /**
- * Debug logging for the checkout and payment calls: one line for the payload, one for the response
- * (or the error body). The card number and CVV are masked - never log them in full.
- */
-const maskCard = (body) => (body?.card
-  ? { ...body, card: { ...body.card, number: `**** ${String(body.card.number || '').slice(-4)}`, cvv: '***' } }
-  : body);
-const logged = (label, payload, request) => {
-  console.log(`[api] ${label} payload:`, maskCard(payload));
-  return request.then(
-    (data) => { console.log(`[api] ${label} response:`, data); return data; },
-    (err) => { console.log(`[api] ${label} error response:`, err.response?.data || err.message); throw err; },
-  );
-};
-
-/**
  * The visitor's country selection ("AE,SA", or null for Global) is added to every catalogue request,
  * so pages don't need to pass it themselves. Set by CountryProvider.
  */
@@ -55,7 +40,7 @@ export const cart = {
   clear: () => del('/cart'),
   applyCoupon: (code) => post('/checkout/apply-coupon', { code }),
   removeCoupon: () => del('/checkout/apply-coupon'),
-  checkout: (body) => logged('POST /checkout', body, post('/checkout', body)),
+  checkout: (body) => post('/checkout', body),
   countries: () => get('/checkout/countries'),
 };
 
@@ -83,27 +68,16 @@ export const account = {
  */
 const payHeaders = (token) => (token ? { headers: { 'X-Payment-Token': token } } : undefined);
 export const payments = {
-  config: () => logged('GET /payments/config', undefined, get('/payments/config')),
-  // Logged for Hosted Session attempts only: a payment link polls this every 8 seconds.
-  status: (orderNumber, token) => api.get(`/payments/${encodeURIComponent(orderNumber)}`, payHeaders(token)).then((r) => {
-    if (r.data?.data?.payment?.method === 'HOSTED_SESSION') {
-      console.log(`[api] GET /payments/${orderNumber} payload:`, { orderNumber });
-      console.log(`[api] GET /payments/${orderNumber} response:`, r.data);
-    }
-    return r.data;
-  }),
-  start: (orderNumber, token, body) => logged(`POST /payments/${orderNumber}/start`, body,
-    api.post(`/payments/${encodeURIComponent(orderNumber)}/start`, body, payHeaders(token)).then((r) => r.data)),
+  config: () => get('/payments/config'),
+  status: (orderNumber, token) => api.get(`/payments/${encodeURIComponent(orderNumber)}`, payHeaders(token)).then((r) => r.data),
+  start: (orderNumber, token, body) => api.post(`/payments/${encodeURIComponent(orderNumber)}/start`, body, payHeaders(token)).then((r) => r.data),
   // Direct API: card details from our own form go to our backend, which forwards them to SynraPay.
   // body: card + browser_details for typed cards, or paymentMethodId + browser_details for saved cards.
-  directPay: (orderNumber, token, body) => logged(`POST /payments/${orderNumber}/direct/pay`, body,
-    api.post(`/payments/${encodeURIComponent(orderNumber)}/direct/pay`, body, payHeaders(token)).then((r) => r.data)),
+  directPay: (orderNumber, token, body) => api.post(`/payments/${encodeURIComponent(orderNumber)}/direct/pay`, body, payHeaders(token)).then((r) => r.data),
   // Saved cards (signed-in owner of the order only): brand, last 4 and expiry - never a card number.
   savedCards: (orderNumber, token) => api.get(`/payments/${encodeURIComponent(orderNumber)}/saved-cards`, payHeaders(token)).then((r) => r.data),
   // environment: the SynraPay environment the card is saved in (each account keeps its own cards).
   removeSavedCard: (id, environment) => del(`/payment-methods/${encodeURIComponent(id)}${environment ? `?environment=${encodeURIComponent(environment)}` : ''}`),
-  directAuthenticate: (orderNumber, token) => logged(`POST /payments/${orderNumber}/direct/authenticate`, {},
-    api.post(`/payments/${encodeURIComponent(orderNumber)}/direct/authenticate`, {}, payHeaders(token)).then((r) => r.data)),
-  sendLink: (orderNumber, token, email) => logged(`POST /payments/${orderNumber}/send-link`, email ? { email } : {},
-    api.post(`/payments/${encodeURIComponent(orderNumber)}/send-link`, email ? { email } : {}, payHeaders(token)).then((r) => r.data)),
+  directAuthenticate: (orderNumber, token) => api.post(`/payments/${encodeURIComponent(orderNumber)}/direct/authenticate`, {}, payHeaders(token)).then((r) => r.data),
+  sendLink: (orderNumber, token, email) => api.post(`/payments/${encodeURIComponent(orderNumber)}/send-link`, email ? { email } : {}, payHeaders(token)).then((r) => r.data),
 };

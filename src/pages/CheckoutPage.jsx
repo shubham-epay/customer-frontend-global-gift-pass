@@ -269,25 +269,6 @@ export default function CheckoutPage() {
     if (Object.keys(e).length) { focusFirstError(); return; }
     setBusy(true);
     try {
-      const payload = {
-  email: email.trim(),
-  ...ship,
-  phone: phoneFor(phone, ship.country),
-  saveInfo,
-  paymentMethod: payment.method,
-  ...(payment.environment && { paymentEnvironment: payment.environment }),
-  ...(payment.method === 'PAY_BY_LINK' && {
-    paymentLinkType: payment.linkType,
-    paymentLinkExpiresInHours: payment.expiresInHours,
-  }),
-  ...(payment.method === 'DIRECT_CARD' && {
-    directCaptureMode: payment.captureMode,
-  }),
-  billingSameAsShipping: billingSame,
-  ...(!billingSame && { billing: bill }),
-};
-
-console.log('Request Payload:', payload);
       const { data } = await cartApi.checkout({
         email: email.trim(),
         ...ship,
@@ -300,7 +281,6 @@ console.log('Request Payload:', payload);
         billingSameAsShipping: billingSame,
         ...(!billingSame && { billing: bill }),
       });
-      console.log('Response Payload:', data);
       try {
         if (saveInfo && !isAuthed) localStorage.setItem(SAVED_KEY, JSON.stringify({ email: email.trim(), address: ship, phone }));
         else if (!saveInfo) localStorage.removeItem(SAVED_KEY);

@@ -2,9 +2,39 @@ import axios from 'axios';
 
 const baseURL = import.meta.env.VITE_API_BASE_URL || '/api';
 
-const logApiRoute = (method, url) => {
-  const requestUrl = new URL(url, window.location.origin);
-  console.log(`[api] ${method.toUpperCase()} ${requestUrl.origin}${requestUrl.pathname}`);
+/**
+ * Console log of every backend call: the full API route, what is sent and what comes back.
+ *   [api] -> POST https://<api host>/api/checkout   + payload / query
+ *   [api] <- 201 POST https://<api host>/api/checkout (850 ms)   + response (or the error body)
+ * Card data, passwords and session tokens are never printed; client and pay tokens only by their start.
+ */
+const HIDDEN = new Set(['number', 'cvv', 'cvc', 'expiry', 'expiryMonth', 'expiryYear', 'exp_month', 'exp_year',
+  'password', 'currentPassword', 'newPassword', 'confirmPassword', 'otp', 'accessToken', 'refreshToken']);
+const SHORTENED = new Set(['clientToken', 'client_token', 'payToken', 'cartToken', 'token']);
+const safe = (value) => {
+  if (value == null || typeof value !== 'object') return value;
+  try {
+    return JSON.parse(JSON.stringify(value, (k, v) => {
+      if (HIDDEN.has(k) && v != null && typeof v !== 'boolean') return '[not logged]';
+      if (SHORTENED.has(k) && typeof v === 'string') return `${v.slice(0, 8)}... (${v.length} chars)`;
+      return v;
+    }));
+  } catch { return value; }
+};
+const routeOf = (cfg) => {
+  const u = new URL(api.getUri(cfg), window.location.origin);
+  return `${(cfg.method || 'get').toUpperCase()} ${u.origin}${u.pathname}`;
+};
+const logRequest = (cfg) => {
+  const route = routeOf(cfg);
+  const body = typeof cfg.data === 'string' ? (() => { try { return JSON.parse(cfg.data); } catch { return cfg.data; } })() : cfg.data;
+  const sent = { ...(cfg.params && Object.keys(cfg.params).length && { query: safe(cfg.params) }), ...(body !== undefined && body !== null && { payload: safe(body) }) };
+  console.log(`[api] -> ${route}`, ...(Object.keys(sent).length ? [sent] : []));
+};
+const logResponse = (cfg, status, data, failed) => {
+  if (!cfg) return;
+  const ms = cfg.metadata?.startedAt ? ` (${Math.round(performance.now() - cfg.metadata.startedAt)} ms)` : '';
+  console[failed ? 'warn' : 'log'](`[api] <- ${status ?? 'network error'} ${routeOf(cfg)}${ms}`, safe(data));
 };
 
 /**
@@ -41,9 +71,16 @@ api.interceptors.request.use((cfg) => {
   if (accessToken) cfg.headers.Authorization = `Bearer ${accessToken}`;
   const cartToken = cartTokenStore.get();
   if (cartToken && /^\/(cart|checkout)/.test(cfg.url || '')) cfg.headers['X-Cart-Token'] = cartToken;
-  logApiRoute(cfg.method || 'get', api.getUri(cfg));
+  cfg.metadata = { startedAt: performance.now() };
+  logRequest(cfg);
   return cfg;
 });
+
+// Log every answer (success or error) with the route it belongs to.
+api.interceptors.response.use(
+  (r) => { logResponse(r.config, r.status, r.data, false); return r; },
+  (error) => { logResponse(error.config, error.response?.status, error.response?.data || error.message, true); return Promise.reject(error); },
+);
 
 // Keep the guest cart handle in sync with what the API says.
 api.interceptors.response.use((r) => {
@@ -63,8 +100,11 @@ export function refreshSession() {
       for (let attempt = 0; attempt < 2; attempt += 1) {
         try {
           const refreshUrl = `${baseURL}/auth/refresh`;
-          logApiRoute('post', refreshUrl);
-          const { data } = await axios.post(refreshUrl, null, { withCredentials: true, timeout: 15000 });
+          const refreshCfg = { method: 'post', url: refreshUrl, metadata: { startedAt: performance.now() } };
+          logRequest(refreshCfg);
+          const { data } = await axios.post(refreshUrl, null, { withCredentials: true, timeout: 15000 })
+            .catch((e) => { logResponse(refreshCfg, e.response?.status, e.response?.data || e.message, true); throw e; });
+          logResponse(refreshCfg, 200, data, false);
           accessToken = data.data.accessToken;
           return data.data;
         } catch (err) {
