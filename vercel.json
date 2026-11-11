@@ -15,7 +15,7 @@
         },
         {
           "key": "Content-Security-Policy-Report-Only",
-          "value": "script-src 'self' https://dev.js.synrapay.com https://*.mastercard.com; connect-src 'self' https://backend-global-giftpass-1.onrender.com https://dev-api.synrapay.com https://*.mastercard.com; frame-src 'self' https://*.mastercard.com https:"
+          "value": "script-src 'self' https://sandbox.js.synrapay.com https://js.synrapay.com https://dev.js.synrapay.com https://*.mastercard.com; connect-src 'self' https://backend-global-giftpass-1.onrender.com https://dev-api.synrapay.com https://*.mastercard.com; frame-src 'self' https://sandbox.js.synrapay.com https://js.synrapay.com https://*.mastercard.com https:"
         },
         {
           "key": "X-Frame-Options",

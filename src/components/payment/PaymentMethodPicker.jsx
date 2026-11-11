@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { SelectField } from '../checkout/Fields';
 import { Amex, Mastercard, Visa } from '../checkout/Badges';
 import { CheckIcon, ChevronDown, LockIcon } from '../Icons';
+import { hostedSessionScript } from './synrapayScripts';
 
 export const METHOD_OPTIONS = [
   {
@@ -34,7 +35,9 @@ export const METHOD_OPTIONS = [
 export const ENVIRONMENTS = {
   sandbox: { title: 'Sandbox', text: 'SynraPay sandbox account (sandbox-api.synrapay.com).' },
   dev: { title: 'Dev', text: 'SynraPay development account (dev-api.synrapay.com).' },
+  production: { title: 'Production', text: 'Live SynraPay account (api.synrapay.com). Real cards are charged. Hosted Checkout and Hosted Session.' },
 };
+export const isLive = (id) => id === 'production';
 export const envLabel = (id) => ENVIRONMENTS[id]?.title || id;
 
 export const LINK_TYPES = [
@@ -140,9 +143,18 @@ function MethodSelect({ options, value, onChange, disabled }) {
  * Pay By Link reveals its link types and validity; Direct API its two capture modes.
  */
 export default function PaymentMethodPicker({ value, onChange, methods, environments, disabled, children }) {
-  const options = METHOD_OPTIONS.filter((m) => !methods || methods.includes(m.id));
+  // The chosen environment may allow fewer methods (dev: no Hosted Session; production: Hosted Checkout
+  // and Hosted Session). Hosted Session also needs that environment's script from SynraPay's docs.
+  const envMethods = environments?.find((e) => e.id === value.environment)?.methods;
+  const options = METHOD_OPTIONS.filter((m) => (!methods || methods.includes(m.id))
+    && (!envMethods || envMethods.includes(m.id))
+    && (m.id !== 'HOSTED_SESSION' || !value.environment || hostedSessionScript(value.environment)));
   const current = options.find((m) => m.id === value.method) || options[0];
   const set = (patch) => onChange({ ...value, ...patch });
+  // Switching to an environment that doesn't offer the selected method moves to one it does.
+  useEffect(() => {
+    if (current && current.id !== value.method) onChange({ ...value, method: current.id });
+  }, [current?.id, value.method]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="pm">
@@ -157,6 +169,7 @@ export default function PaymentMethodPicker({ value, onChange, methods, environm
           ))}
         </div>
       )}
+      {isLive(value.environment) && <p className="pm-live" role="note"><b>Live payment.</b> This uses the production account: your card is really charged.</p>}
       <MethodSelect options={options} value={current?.id} onChange={(method) => set({ method })} disabled={disabled} />
 
       <div className="co-pay-opt__body pm__body">

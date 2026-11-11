@@ -299,3 +299,10 @@
 .pay-card .pay-switch { justify-self: center; }
 .pay-card .cf input:disabled { opacity: .6; }
 @media (max-width: 560px) { .dc-frame { height: 520px; } }
+/* ---------- Hosted Session inline on the checkout page ---------- */
+.co-locked { opacity: .6; pointer-events: none; user-select: none; }
+.co-session { display: grid; gap: 14px; margin-top: 18px; scroll-margin-top: 16px; }
+.co-done { padding: 0 16px 64px; }
+.co-session .co-sub { margin: 0; }
+.pm-live { margin: 0; padding: 10px 14px; border: 1px solid #F3C1C1; border-radius: 7px; background: #FFF1F1; color: #7A1F1F; font-size: 13.5px; line-height: 1.5; }
+.pay-tag.is-live { background: #FFE4E4; color: #9B1C1C; }

@@ -12,6 +12,8 @@ import { BagIcon, ChevronDown } from '../components/Icons';
 import { Check, Field, HelpTip, SelectField } from '../components/checkout/Fields';
 import { SecureSeal } from '../components/checkout/Badges';
 import PaymentMethodPicker from '../components/payment/PaymentMethodPicker';
+import HostedSessionPanel from '../components/payment/HostedSessionPanel';
+import OrderConfirmation from '../components/OrderConfirmation';
 import { payStore } from '../utils/payStore';
 import { imageOf } from '../utils/format';
 import '../styles/checkout.css';
@@ -164,6 +166,14 @@ export default function CheckoutPage() {
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
+  // Hosted Session: the order is placed and SynraPay's card form is shown under the payment method, on this page.
+  // { order, payment, token, cart } - cart is the snapshot from before checkout emptied it.
+  const [placed, setPlaced] = useState(null);
+  // After the card is submitted: the order's next steps, shown here instead of on a new page. { order, note }
+  const [result, setResult] = useState(null);
+  const sessionRef = useRef(null);
+  useEffect(() => { if (placed) sessionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, [placed]);
+  useEffect(() => { if (result) window.scrollTo({ top: 0, behavior: 'smooth' }); }, [result]);
 
   useEffect(() => { reloadCart().finally(() => setLoaded(true)); }, [reloadCart]);
   useEffect(() => { cartApi.countries().then((r) => setRef(r.data)).catch(() => {}); }, []);
@@ -252,6 +262,8 @@ export default function CheckoutPage() {
 
   const pay = async (ev) => {
     ev.preventDefault();
+    if (placed) return;
+    const cartSnapshot = cart;
     const e = validate();
     setErrors(e);
     if (Object.keys(e).length) { focusFirstError(); return; }
@@ -301,6 +313,10 @@ console.log('Request Payload:', payload);
       const { payToken, payment: started, paymentError, ...order } = data;
       payStore.set(order.orderNumber, { token: payToken, order });
       if (started?.method === 'CARD' && started.checkoutUrl) { window.location.assign(started.checkoutUrl); return; }
+      if (started?.method === 'HOSTED_SESSION' && started.session?.clientToken && started.status === 'PENDING') {
+        setPlaced({ order, payment: started, token: payToken, cart: cartSnapshot });
+        return;
+      }
       navigate(`/pay/${order.orderNumber}`, { replace: true, state: { order, payment: started, paymentError } });
     } catch (err) {
       const fe = fieldErrors(err);
@@ -310,6 +326,31 @@ console.log('Request Payload:', payload);
       if (err?.response?.status === 409) reloadCart();
     } finally { setBusy(false); }
   };
+
+  /** The card form reported success: wait for our webhook / Get Status to confirm, then show the next steps here. */
+  const onSessionCompleted = async () => {
+    const { order, token } = placed;
+    let latest = order;
+    for (let i = 0; i < 8; i += 1) {
+      try {
+        const { data } = await payments.status(order.orderNumber, token);
+        latest = { ...order, ...data.order };
+        const st = data.order?.paymentStatus;
+        if (st === 'PAID' || st === 'AUTHORIZED') {
+          try { sessionStorage.setItem('ggp-last-order', JSON.stringify(latest)); } catch { /* storage unavailable */ }
+          payStore.clear(order.orderNumber);
+          setResult({ order: latest });
+          return;
+        }
+      } catch { /* keep trying */ }
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+    // SynraPay accepted the card but our webhook hasn't confirmed it yet.
+    try { sessionStorage.setItem('ggp-last-order', JSON.stringify(latest)); } catch { /* storage unavailable */ }
+    setResult({ order: { ...latest, paymentStatus: latest.paymentStatus || 'PENDING' }, note: 'Your payment is being confirmed. You’ll get an email as soon as it’s done - there’s no need to pay again.' });
+  };
+  // New attempt or another method: the pay page handles it for this (already placed) order.
+  const payElsewhere = () => navigate(`/pay/${placed.order.orderNumber}`, { replace: true, state: { order: placed.order } });
 
   const header = (
     <header className="co-header">
@@ -322,7 +363,7 @@ console.log('Request Payload:', payload);
   );
 
   if (!loaded || status === 'loading') return <div className="co">{header}<div className="co-loading"><span className="spinner" /></div></div>;
-  if (!cart || !cart.items.length) {
+  if (!placed && (!cart || !cart.items.length)) {
     return (
       <div className="co">{header}
         <div className="co-empty">
@@ -334,12 +375,18 @@ console.log('Request Payload:', payload);
     );
   }
 
+  // After a Hosted Session order is placed the live cart is empty: keep showing what was ordered.
+  const shown = placed?.cart || cart;
+  const shownCurrency = shown.currency && shown.currency !== 'MIXED' ? shown.currency : currency;
+  const locked = () => Promise.reject(new Error('Your order is already placed.'));
+  // Once the order is placed only the card form stays usable; the rest of the form is read-only.
+  const lock = placed ? { inert: '', className: 'co-locked', 'aria-disabled': 'true' } : {};
   const summaryProps = {
-    cart,
-    currency,
+    cart: shown,
+    currency: shownCurrency,
     addressReady,
-    onApplyCoupon: (code) => cartApi.applyCoupon(code).then((r) => { setCart(r.data); toast.success('Discount applied'); }),
-    onRemoveCoupon: () => mutate(() => cartApi.removeCoupon(), 'Discount removed').catch(() => {}),
+    onApplyCoupon: placed ? locked : (code) => cartApi.applyCoupon(code).then((r) => { setCart(r.data); toast.success('Discount applied'); }),
+    onRemoveCoupon: placed ? () => {} : () => mutate(() => cartApi.removeCoupon(), 'Discount removed').catch(() => {}),
   };
 
   return (
@@ -348,17 +395,20 @@ console.log('Request Payload:', payload);
       {/* Mobile: collapsible summary above the form */}
       <button type="button" className="co-toggle" onClick={() => setSummaryOpen(!summaryOpen)} aria-expanded={summaryOpen}>
         <span>{summaryOpen ? 'Hide' : 'Show'} order summary <ChevronDown width={14} height={14} className={summaryOpen ? 'up' : ''} /></span>
-        <strong>{amount(cart.total, currency)}</strong>
+        <strong>{amount(shown.total, shownCurrency)}</strong>
       </button>
-      {summaryOpen && <div className="co-summary-mobile"><Summary {...summaryProps} /></div>}
+      {summaryOpen && !result && <div className="co-summary-mobile"><Summary {...summaryProps} /></div>}
 
+      {result ? (
+        <div className="co-done"><OrderConfirmation order={result.order} note={result.note} /></div>
+      ) : (
       <div className="co-body">
         <main className="co-main">
           <form ref={formRef} className="co-form" onSubmit={pay} noValidate>
-            {cart.currency === 'MIXED' && <div className="co-alert">Your cart has items in different currencies. Check out one currency at a time.</div>}
-            {cart.hasUnavailableItems && <div className="co-alert">Some items are no longer available. <Link to="/cart">Remove them from your cart</Link> to continue.</div>}
+            {!placed && shown.currency === 'MIXED' && <div className="co-alert">Your cart has items in different currencies. Check out one currency at a time.</div>}
+            {!placed && shown.hasUnavailableItems && <div className="co-alert">Some items are no longer available. <Link to="/cart">Remove them from your cart</Link> to continue.</div>}
 
-            <section>
+            <section {...lock}>
               <h2>Contact</h2>
               <Field
                 label="Email"
@@ -374,7 +424,7 @@ console.log('Request Payload:', payload);
               />
             </section>
 
-            <section>
+            <section {...lock}>
               <h2>Delivery</h2>
               <div className="co-stack">
                 <AddressFields value={ship} set={setShipField} errors={errors} countries={ref.countries} emirates={ref.emirates} />
@@ -399,7 +449,7 @@ console.log('Request Payload:', payload);
               </div>
             </section>
 
-            <section>
+            <section {...lock}>
               <h3>Shipping method</h3>
               {addressReady ? (
                 <div className="co-ship">
@@ -414,26 +464,48 @@ console.log('Request Payload:', payload);
             <section>
               <h2>Payment</h2>
               <p className="co-sub">All transactions are secure and encrypted.</p>
-              <PaymentMethodPicker value={payment} onChange={setPayment} environments={payConfig?.environments} disabled={busy}>
-                <Check checked={billingSame} onChange={setBillingSame}>Use shipping address as billing address</Check>
-                {!billingSame && (
-                  <div className="co-stack co-billing">
-                    <AddressFields value={bill} set={setBillField} errors={errors} prefix="billing." countries={ref.countries} emirates={ref.emirates} />
-                  </div>
-                )}
-              </PaymentMethodPicker>
+              <div {...lock}>
+                <PaymentMethodPicker value={payment} onChange={setPayment} environments={payConfig?.environments} disabled={busy || Boolean(placed)}>
+                  <Check checked={billingSame} onChange={setBillingSame}>Use shipping address as billing address</Check>
+                  {!billingSame && (
+                    <div className="co-stack co-billing">
+                      <AddressFields value={bill} set={setBillField} errors={errors} prefix="billing." countries={ref.countries} emirates={ref.emirates} />
+                    </div>
+                  )}
+                </PaymentMethodPicker>
+              </div>
               {paymentsOff && <p className="co-sub co-pay-off">Online payment is temporarily unavailable. You can still place your order and pay from the next page once it’s back.</p>}
+
+              {/* Hosted Session: SynraPay's card form, right under the payment method. */}
+              {placed && (
+                <div ref={sessionRef} className="co-session">
+                  <p className="co-sub">Order <b>{placed.order.orderNumber}</b> is placed. Enter your card details below to pay.</p>
+                  <HostedSessionPanel
+                    session={placed.payment.session}
+                    amountLabel={amount(placed.order.total ?? shown.total, placed.order.currency || shownCurrency)}
+                    onCompleted={onSessionCompleted}
+                    onRestart={payElsewhere}
+                  />
+                  <button type="button" className="pay-switch" onClick={payElsewhere}>Pay another way</button>
+                </div>
+              )}
             </section>
 
-            <p className="co-terms">By clicking on &apos;Pay now&apos;, you are agreeing to <Link to="/page/terms">terms of service</Link>.</p>
-            <button type="submit" className="co-pay" disabled={busy || cart.hasUnavailableItems || cart.currency === 'MIXED'}>
-              {busy ? 'Processing…' : payment.method === 'PAY_BY_LINK' ? 'Place order & create payment link' : ['HOSTED_SESSION', 'DIRECT_CARD'].includes(payment.method) ? 'Continue to payment' : 'Pay now'}
-            </button>
+            {!placed && (
+              <>
+                <p className="co-terms">By clicking on &apos;Pay now&apos;, you are agreeing to <Link to="/page/terms">terms of service</Link>.</p>
+                <button type="submit" className="co-pay" disabled={busy || shown.hasUnavailableItems || shown.currency === 'MIXED'}>
+                  {busy ? 'Processing…' : payment.method === 'PAY_BY_LINK' ? 'Place order & create payment link' : ['HOSTED_SESSION', 'DIRECT_CARD'].includes(payment.method) ? 'Continue to payment' : 'Pay now'}
+                </button>
+              </>
+            )}
           </form>
+
         </main>
 
         <aside className="co-aside"><Summary {...summaryProps} /></aside>
       </div>
+      )}
     </div>
   );
 }
