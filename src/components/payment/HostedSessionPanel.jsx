@@ -90,7 +90,9 @@ export default function HostedSessionPanel({ session, amountLabel, onCompleted, 
         if (!live) return;
         box.innerHTML = '';
         // The client token is a credential for the card form: only its start is logged.
-        console.log('[hosted-session] mount:', { clientToken: `${String(session.clientToken).slice(0, 8)}...`, container: '#synra-card', script, environment: SDK.environment, version: SDK.version });
+        // Which SynraPay API made this token (set by our backend); missing = a backend without this change.
+        console.log(`[hosted-session] client token from: ${session.tokenApi || 'unknown (backend not updated - check its [synrapay:...] logs)'}`);
+        console.log('[hosted-session] mount:', { clientToken: `${String(session.clientToken).slice(0, 8)}...`, sessionId: session.sessionId, tokenApi: session.tokenApi, container: '#synra-card', script, environment: SDK.environment, version: SDK.version });
         handle.current = SDK.mount({
           clientToken: session.clientToken, // from Create Session, passed unchanged
           container: box,
