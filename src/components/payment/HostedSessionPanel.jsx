@@ -41,6 +41,16 @@ function loadSdk(src) {
 }
 
 // The session is gone; a new attempt is needed.
+/** The environment written inside a client token (hf1.<payload>.<signature>): the same field SynraPay's script reads. */
+const tokenEnvironment = (token) => {
+  try {
+    const part = String(token).split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(atob(part + '==='.slice((part.length + 3) % 4))).env || null;
+  } catch {
+    return null;
+  }
+};
+
 const RESTART = ['SESSION_EXPIRED', 'INVALID_SESSION', 'INVALID_CLIENT_TOKEN', 'NO_CLIENT_TOKEN', 'ENVIRONMENT_MISMATCH', 'ORDER_NOT_FOUND', 'TOKEN_EXPIRED', 'SESSION_ERROR', 'HOSTED_FIELDS_ATTEMPTS_EXHAUSTED'];
 // Passing problems the fields recover from by themselves (they already show what's wrong, or are busy).
 const TRANSIENT = ['VALIDATION_FAILED', 'NOT_READY', 'BUSY'];
@@ -83,8 +93,16 @@ export default function HostedSessionPanel({ session, amountLabel, onCompleted, 
       setError({ code: r.code || (r.status === 'cancel' ? 'CANCELLED' : 'DECLINED'), message: r.message || 'The payment was not completed. Check your card details or try another card.' });
     };
 
-    // The script of the environment that created this session, as given in SynraPay's docs.
-    const script = hostedSessionScript(session.environment);
+    // The script of the environment that created this session, as given in SynraPay's docs. The client
+    // token names that environment itself (its `env`, which SynraPay's script checks against its own), so
+    // the token decides; our backend's label is only the fallback.
+    const tokenEnv = tokenEnvironment(session.clientToken);
+    if (tokenEnv && tokenEnv !== session.environment) {
+      console.warn(`[hosted-session] environment mismatch: our backend labelled this session "${session.environment}", but SynraPay made the client token in "${tokenEnv}" (via ${session.tokenApi || 'unknown API'}). `
+        + `Loading the ${tokenEnv} script. Fix the backend's SYNRAPAY_${String(session.environment).toUpperCase()}_* settings: their BASE / MERCHANT_ID / SIGNATURE_KEY belong to the ${tokenEnv} account.`);
+    }
+    const script = hostedSessionScript(tokenEnv || session.environment);
+    console.log(`[hosted-session] token environment: ${tokenEnv || 'unreadable'} | backend environment: ${session.environment} | script: ${script || 'none for this environment'}`);
     (script ? loadSdk(script) : Promise.reject(problem('ENVIRONMENT_UNSUPPORTED')))
       .then((SDK) => {
         if (!live) return;
