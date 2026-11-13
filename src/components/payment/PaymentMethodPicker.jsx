@@ -143,7 +143,7 @@ function MethodSelect({ options, value, onChange, disabled }) {
  * Pay By Link reveals its link types and validity; Direct API its two capture modes.
  */
 export default function PaymentMethodPicker({ value, onChange, methods, environments, disabled, children }) {
-  // The chosen environment may allow fewer methods (dev: no Hosted Session; production: Hosted Checkout
+  // The chosen environment may allow fewer methods (production: Hosted Checkout
   // and Hosted Session). Hosted Session also needs that environment's script from SynraPay's docs.
   const envMethods = environments?.find((e) => e.id === value.environment)?.methods;
   const options = METHOD_OPTIONS.filter((m) => (!methods || methods.includes(m.id))
