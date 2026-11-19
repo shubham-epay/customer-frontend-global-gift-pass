@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { payments } from '../api/store';
+import { paymentsFor, withoutHiddenEnvironments, isHiddenEnvironment } from '../api/payments';
 import { errorMessage } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import Logo from '../components/Logo';
@@ -43,6 +44,7 @@ export default function PayPage() {
   const [busy, setBusy] = useState(false);
   const [methods, setMethods] = useState(null);
   const [environments, setEnvironments] = useState(null);
+  const [defaultEnv, setDefaultEnv] = useState(undefined);
   const confirmed = useRef(false);
 
   const goConfirmed = useCallback((o) => {
@@ -63,7 +65,7 @@ export default function PayPage() {
     // Keep a hosted session that's mounted (its client token isn't returned by the status call).
     setPayment((p) => (p?.session?.clientToken && p._id === data.payment?._id ? { ...p, status: data.payment.status } : data.payment));
     // Retrying or switching method starts out in the environment of the latest attempt.
-    if (data.payment?.environment) setChoice((c) => (c.environment ? c : { ...c, environment: data.payment.environment }));
+    if (data.payment?.environment && !isHiddenEnvironment(data.payment.environment)) setChoice((c) => (c.environment ? c : { ...c, environment: data.payment.environment }));
     return data;
   }, [orderNumber, token, goConfirmed]);
 
@@ -74,13 +76,15 @@ export default function PayPage() {
       window.parent.postMessage({ type: 'synrapay-3ds-return' }, window.location.origin);
       return () => { live = false; };
     }
-    payments.config().then((r) => {
+    payments.config().then((res) => {
       if (!live) return;
-      setMethods(r.data.methods);
-      setEnvironments(r.data.environments || null);
+      const conf = withoutHiddenEnvironments(res.data); // dev is not offered in the storefront
+      setMethods(conf.methods);
+      setEnvironments(conf.environments.length ? conf.environments : null);
+      setDefaultEnv(conf.environment);
       // Keep the environment of the order's attempt when it is still offered, else the default.
-      const offered = (r.data.environments || []).map((e) => e.id);
-      setChoice((c) => ({ ...c, environment: offered.includes(c.environment) ? c.environment : offered[0] || r.data.environment }));
+      const offered = conf.environments.map((e) => e.id);
+      setChoice((c) => ({ ...c, environment: offered.includes(c.environment) ? c.environment : offered[0] || conf.environment }));
     }).catch(() => {});
     (async () => {
       const tries = params.get('result') === 'success' ? 6 : 1;
@@ -128,9 +132,9 @@ export default function PayPage() {
     setBusy(true);
     setError('');
     try {
-      const { data } = await payments.start(orderNumber, token, {
+      // Each environment has its own API (/api/payments/<env>/...): the chosen one is called directly.
+      const { data } = await paymentsFor(choice.environment, defaultEnv).start(orderNumber, token, {
         method: choice.method,
-        ...(choice.environment && { environment: choice.environment }),
         ...(choice.method === 'PAY_BY_LINK' && { linkType: choice.linkType, expiresInHours: choice.expiresInHours }),
         ...(choice.method === 'DIRECT_CARD' && { captureMode: choice.captureMode }),
       });
@@ -216,14 +220,14 @@ export default function PayPage() {
             email={snapshot?.customer?.email}
             checking={checking}
             onCheck={check}
-            onSendEmail={(to) => payments.sendLink(orderNumber, token, to).then((r) => r.data).catch((err) => { throw new Error(errorMessage(err)); })}
+            onSendEmail={(to) => paymentsFor(payment.environment).sendLink(orderNumber, token, to).then((r) => r.data).catch((err) => { throw new Error(errorMessage(err)); })}
           />
         )}
 
         {showPicker && (
           <form className="pay-card" onSubmit={start}>
             <h2>{payment ? 'Choose how to pay' : 'Pay for your order'}</h2>
-            {payment?.environment && <p className="pay-muted">Last attempt: {envLabel(payment.environment)} environment.</p>}
+            {payment?.environment && !isHiddenEnvironment(payment.environment) && <p className="pay-muted">Last attempt: {envLabel(payment.environment)} environment.</p>}
             <PaymentMethodPicker value={choice} onChange={setChoice} methods={methods} environments={environments} disabled={busy} />
             <button type="submit" className="co-pay" disabled={busy}>
               {busy ? 'Please wait…' : choice.method === 'PAY_BY_LINK' ? 'Create payment link' : choice.method === 'CARD' ? 'Continue to payment' : 'Continue to card details'}

@@ -155,6 +155,10 @@ export default function PaymentMethodPicker({ value, onChange, methods, environm
   useEffect(() => {
     if (current && current.id !== value.method) onChange({ ...value, method: current.id });
   }, [current?.id, value.method]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Production payment links last at most 10 days: a longer choice made for another environment drops to 7 days.
+  useEffect(() => {
+    if (isLive(value.environment) && value.expiresInHours > 240) onChange({ ...value, expiresInHours: 168 });
+  }, [value.environment, value.expiresInHours]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="pm">
@@ -190,7 +194,8 @@ export default function PaymentMethodPicker({ value, onChange, methods, environm
               ))}
             </div>
             <SelectField label="Link valid for" value={String(value.expiresInHours)} onChange={(h) => set({ expiresInHours: Number(h) })}>
-              {LINK_EXPIRY.map((o) => <option key={o.hours} value={o.hours}>{o.label}</option>)}
+              {/* Production links last 24 hours to 10 days (240 h), per SynraPay's Pay By Link docs. */}
+              {LINK_EXPIRY.filter((o) => !isLive(value.environment) || o.hours <= 240).map((o) => <option key={o.hours} value={o.hours}>{o.label}</option>)}
             </SelectField>
           </>
         )}

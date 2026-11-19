@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AsYouType, getCountryCallingCode, parsePhoneNumberFromString } from 'libphonenumber-js/max';
 import { account, cart as cartApi, payments } from '../api/store';
+import { withoutHiddenEnvironments } from '../api/payments';
 import { cartTokenStore, errorMessage, fieldErrors } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { useShop } from '../auth/ShopContext';
@@ -179,11 +180,12 @@ export default function CheckoutPage() {
   useEffect(() => { cartApi.countries().then((r) => setRef(r.data)).catch(() => {}); }, []);
   useEffect(() => {
     payments.config().then((r) => {
-      setPayConfig(r.data);
+      const conf = withoutHiddenEnvironments(r.data); // dev is not offered in the storefront
+      setPayConfig(conf);
       setPayment((p) => ({
         ...p,
-        expiresInHours: r.data.linkExpiry?.defaultHours || p.expiresInHours,
-        environment: p.environment || r.data.environments?.[0]?.id || r.data.environment,
+        expiresInHours: conf.linkExpiry?.defaultHours || p.expiresInHours,
+        environment: conf.environments.some((e) => e.id === p.environment) ? p.environment : conf.environments[0]?.id || conf.environment,
       }));
     }).catch(() => setPayConfig({ enabled: false }));
   }, []);

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { payments } from '../../api/store';
+import { paymentsFor, isHiddenEnvironment } from '../../api/payments';
 import { errorMessage, fieldErrors } from '../../api/client';
 import { Check, Field } from '../checkout/Fields';
 import { Amex, CARD_BRAND_BADGES, GenericCard, Mastercard, Visa } from '../checkout/Badges';
@@ -36,21 +36,23 @@ export default function DirectCardPanel({ orderNumber, token, amountLabel, defau
   const [selected, setSelected] = useState(NEW_CARD); // a saved card's id, or NEW_CARD
   const [saveCard, setSaveCard] = useState(false);
   const finishing = useRef(false);
+  // This attempt's environment (sandbox | dev | production) has its own API; every call here goes to it.
+  const envApi = paymentsFor(environment);
 
   const loadWallet = useCallback(async () => {
     if (!canSaveCards) return;
     try {
-      const { data } = await payments.savedCards(orderNumber, token);
+      const { data } = await envApi.savedCards(orderNumber, token);
       setWallet(data);
       setSelected((cur) => (data.cards.some((c) => c.id === cur) ? cur : data.cards[0]?.id || NEW_CARD));
     } catch { /* saved cards are optional: the card form still works */ }
-  }, [canSaveCards, orderNumber, token]);
+  }, [canSaveCards, orderNumber, token, envApi]);
   useEffect(() => { loadWallet(); }, [loadWallet]);
 
   const removeSaved = async (c) => {
     if (!window.confirm(`Remove ${cardLabel(c)} from your saved cards?`)) return;
     try {
-      await payments.removeSavedCard(c.id, environment);
+      await envApi.removeSavedCard(c.id);
       setMessage(null);
     } catch (err) {
       setMessage({ tone: 'error', text: errorMessage(err) });
@@ -113,7 +115,7 @@ export default function DirectCardPanel({ orderNumber, token, amountLabel, defau
       timeZone: new Date().getTimezoneOffset(),
     };
     try {
-      const { data } = await payments.directPay(orderNumber, token, {
+      const { data } = await envApi.directPay(orderNumber, token, {
         browser_details: browserDetails,
         ...(useSaved
           ? { paymentMethodId: selected }
@@ -145,13 +147,13 @@ export default function DirectCardPanel({ orderNumber, token, amountLabel, defau
     finishing.current = true;
     setPhase('verifying');
     try {
-      const { data } = await payments.directAuthenticate(orderNumber, token);
+      const { data } = await envApi.directAuthenticate(orderNumber, token);
       handle(data);
     } catch (err) {
       setPhase('challenge');
       setMessage({ tone: 'error', text: errorMessage(err) });
     } finally { finishing.current = false; }
-  }, [orderNumber, token, handle]);
+  }, [orderNumber, token, handle, envApi]);
 
   // SynraPay's return page posts this when the challenge step ends. It is only a signal to ask our
   // backend for the real outcome - never proof of payment - so the sender doesn't need to be trusted.
@@ -170,7 +172,7 @@ export default function DirectCardPanel({ orderNumber, token, amountLabel, defau
       <section className="pay-card">
         <div className="pay-card__head">
           <h2>Verify with your bank</h2>
-          {environment && <span className="pay-tag">{envLabel(environment)} · test mode</span>}
+          {environment && !isHiddenEnvironment(environment) && <span className="pay-tag">{envLabel(environment)} · test mode</span>}
         </div>
         <p className="pay-muted">Your bank needs to confirm this payment. Complete the step below; this page continues automatically.</p>
         {challenge && (
@@ -207,7 +209,7 @@ export default function DirectCardPanel({ orderNumber, token, amountLabel, defau
       <div className="pay-card__head">
         <h2>Card details</h2>
         <span className="co-pay-opt__badges">
-          {environment && <span className="pay-tag">{envLabel(environment)} · test mode</span>}
+          {environment && !isHiddenEnvironment(environment) && <span className="pay-tag">{envLabel(environment)} · test mode</span>}
           {HEADER_BRANDS.map(([key, Badge]) => (
             <span key={key} className={`pay-brand ${brand && brand.brand !== key ? 'is-dim' : ''}`}><Badge /></span>
           ))}

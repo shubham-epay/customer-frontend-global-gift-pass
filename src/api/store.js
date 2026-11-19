@@ -63,21 +63,13 @@ export const account = {
 };
 
 /**
- * Online payment (SynraPay). Guests prove access to an order with the pay token returned at checkout,
- * sent as X-Payment-Token; signed-in owners are recognised by their session.
+ * Online payment (SynraPay): what isn't tied to one environment - the payment config and an order's
+ * payment status. Starting, paying, links and saved cards go through each environment's own client,
+ * api/payments/{sandbox,dev,production}.js (paymentsFor(environment)).
+ * Guests prove access to an order with the pay token returned at checkout, sent as X-Payment-Token.
  */
 const payHeaders = (token) => (token ? { headers: { 'X-Payment-Token': token } } : undefined);
 export const payments = {
   config: () => get('/payments/config'),
   status: (orderNumber, token) => api.get(`/payments/${encodeURIComponent(orderNumber)}`, payHeaders(token)).then((r) => r.data),
-  start: (orderNumber, token, body) => api.post(`/payments/${encodeURIComponent(orderNumber)}/start`, body, payHeaders(token)).then((r) => r.data),
-  // Direct API: card details from our own form go to our backend, which forwards them to SynraPay.
-  // body: card + browser_details for typed cards, or paymentMethodId + browser_details for saved cards.
-  directPay: (orderNumber, token, body) => api.post(`/payments/${encodeURIComponent(orderNumber)}/direct/pay`, body, payHeaders(token)).then((r) => r.data),
-  // Saved cards (signed-in owner of the order only): brand, last 4 and expiry - never a card number.
-  savedCards: (orderNumber, token) => api.get(`/payments/${encodeURIComponent(orderNumber)}/saved-cards`, payHeaders(token)).then((r) => r.data),
-  // environment: the SynraPay environment the card is saved in (each account keeps its own cards).
-  removeSavedCard: (id, environment) => del(`/payment-methods/${encodeURIComponent(id)}${environment ? `?environment=${encodeURIComponent(environment)}` : ''}`),
-  directAuthenticate: (orderNumber, token) => api.post(`/payments/${encodeURIComponent(orderNumber)}/direct/authenticate`, {}, payHeaders(token)).then((r) => r.data),
-  sendLink: (orderNumber, token, email) => api.post(`/payments/${encodeURIComponent(orderNumber)}/send-link`, email ? { email } : {}, payHeaders(token)).then((r) => r.data),
 };

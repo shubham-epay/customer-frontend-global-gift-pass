@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { LockIcon } from '../Icons';
 import { envLabel, isLive } from './PaymentMethodPicker';
 import { hostedSessionScript } from './synrapayScripts';
+import { isHiddenEnvironment } from '../../api/payments';
 
 const SDK_TIMEOUT_MS = 15000;
 const problem = (code) => Object.assign(new Error(code), { code });
@@ -170,7 +171,7 @@ export default function HostedSessionPanel({ session, amountLabel, onCompleted, 
     <section className="pay-card">
       <div className="pay-card__head">
         <h2>{title}</h2>
-        {session.environment && <span className={`pay-tag${isLive(session.environment) ? ' is-live' : ''}`}>{envLabel(session.environment)} · {isLive(session.environment) ? 'live' : 'test mode'}</span>}
+        {session.environment && !isHiddenEnvironment(session.environment) && <span className={`pay-tag${isLive(session.environment) ? ' is-live' : ''}`}>{envLabel(session.environment)} · {isLive(session.environment) ? 'live' : 'test mode'}</span>}
       </div>
       {unavailable && (
         <div className="pay-notice" role="alert">
